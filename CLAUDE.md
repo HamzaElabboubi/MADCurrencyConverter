@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 "MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. The project is currently the stock Android Studio "Empty Activity" template: `MainActivity` renders a placeholder `Greeting` composable, and there is no converter logic, networking, persistence, ViewModel, or DI yet. The only tests are the template `ExampleUnitTest` / `ExampleInstrumentedTest`.
 
+**`PROJECT_SPEC.md` is the source of truth for what to build.** Read it before starting work. Key constraints from it:
+
+- V1 scope: convert MAD ↔ USD/EUR/GBP on one screen (amount, source/target selectors, swap, result, rate, last-updated time, AdMob banner). Keep adding currencies easy. Keep V1 small, with no backend, auth, analytics, or extra screens.
+- Stack: MVVM with Retrofit, Coroutines/StateFlow, DataStore for caching, and Google Mobile Ads. Packages are roughly `data/{remote,local,repository}`, `domain/model`, `ui/{screens,components,theme}`, `viewmodel`. Avoid overengineering.
+- Never hardcode rates. Put the rate provider behind an abstraction so it can be swapped. Handle offline, timeouts, API errors, invalid responses, and missing rates. Cached rates must be visibly labelled as possibly stale, never shown as live.
+- AdMob: during development, always use Google's official **test** ad unit/app IDs. Keep ad config out of the conversion logic, and the app must keep working when an ad fails to load. Structure the code so UMP consent can be added before release. Don't use interstitials.
+- Secrets go in `local.properties` → `BuildConfig`, never committed. Request no unnecessary permissions.
+- Conversion math must be testable as plain JVM code without Android dependencies. Required tests: MAD→USD, USD→MAD, MAD→EUR, decimals, zero, invalid amount, missing rate.
+- Work in the spec's phases (setup → API → logic → UI → caching → ads → tests → polish → README). After each phase, build, run tests, and check for deprecations. Don't claim a phase works without verifying it.
+
 ## Commands
 
 Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git Bash).
@@ -27,11 +37,13 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
 ## Build setup notes
 
-- **AGP 9.x with built-in Kotlin**: `app/build.gradle.kts` applies only `com.android.application` and `org.jetbrains.kotlin.plugin.compose` — there is no separate `org.jetbrains.kotlin.android` plugin. Don't add one.
-- `compileSdk` uses the new AGP DSL (`release(36) { minorApiLevel = 1 }`); `minSdk 24`, `targetSdk 36`, Java/Kotlin target 11. Gradle daemon JVM is pinned to 21 via `gradle/gradle-daemon-jvm.properties` (foojay toolchain resolver).
+- **AGP 9.x with built-in Kotlin**: `app/build.gradle.kts` applies `com.android.application` plus the Kotlin `compose` and `serialization` compiler plugins only — there is no separate `org.jetbrains.kotlin.android` plugin. Don't add one.
+- AGP 9.4 requires Gradle ≥ 9.6 (wrapper is on 9.8.0). Current AndroidX/OkHttp releases require `compileSdk` ≥ 37, so it is `release(37) { minorApiLevel = 2 }`, while `targetSdk` stays 36 and `minSdk` is 24, with a Java/Kotlin target of 11. The Gradle daemon JVM is pinned to 21 via `gradle/gradle-daemon-jvm.properties`. From a shell, point `JAVA_HOME` at Android Studio's `jbr`.
+- The AdMob App ID is injected into the manifest via `manifestPlaceholders["admobAppId"]` (Google's test ID by default). The Ads SDK crashes at startup if that meta-data is missing.
+- DI is manual: `MadConverterApplication` creates one `AppContainer` (shared `Json`, `OkHttpClient` with timeouts). Wire new dependencies there, not through Hilt.
 - All dependency/plugin versions live in the version catalog `gradle/libs.versions.toml`; reference them as `libs.*` in build scripts. Compose library versions come from the Compose BOM (no per-artifact versions).
 - `settings.gradle.kts` uses `RepositoriesMode.FAIL_ON_PROJECT_REPOS` — add repositories there, not in module build files.
-- Adding network access (e.g. for exchange-rate APIs) will require the `INTERNET` permission in `app/src/main/AndroidManifest.xml`, which is not declared yet.
+- The app itself declares only `INTERNET`. The Ads SDK merges in `ACCESS_NETWORK_STATE`, `AD_ID`, `ACCESS_ADSERVICES_*`, `WAKE_LOCK` and `FOREGROUND_SERVICE`. Check `app/build/intermediates/merged_manifest/` before claiming what the app requests. `AD_ID` must be declared in the Play Console.
 
 ## UI / theming
 
