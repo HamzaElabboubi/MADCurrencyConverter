@@ -12,6 +12,9 @@ enum class Currency {
 
     val code: String get() = name
 
+    /** Number of minor-unit digits (2 for all current entries), from the JDK's ISO 4217 data. */
+    val fractionDigits: Int get() = java.util.Currency.getInstance(code).defaultFractionDigits
+
     companion object {
         fun fromCode(code: String): Currency? = entries.firstOrNull { it.code == code }
     }
