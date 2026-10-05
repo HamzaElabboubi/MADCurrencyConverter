@@ -1,3 +1,35 @@
 <resources>
-    <string name="app_name">MAD Currency Converter</string>
+    <string name="app_name" translatable="false">MAD Currency Converter</string>
+
+    <string name="amount_label">Amount</string>
+    <string name="from_label">From</string>
+    <string name="to_label">To</string>
+    <string name="swap_currencies">Swap currencies</string>
+    <string name="currency_option" translatable="false">%1$s — %2$s</string>
+
+    <string name="currency_mad">Moroccan dirham</string>
+    <string name="currency_usd">US dollar</string>
+    <string name="currency_eur">Euro</string>
+    <string name="currency_gbp">British pound</string>
+
+    <string name="enter_amount_hint">Enter an amount to convert</string>
+    <string name="error_invalid_amount">Enter a valid number, e.g. 1250.50 or 1250,50</string>
+    <string name="error_amount_too_large">Amount too large. Maximum: %1$s</string>
+
+    <string name="converted_amount" translatable="false">≈ %1$s %2$s</string>
+    <string name="source_amount" translatable="false">%1$s %2$s</string>
+    <string name="exchange_rate" translatable="false">1 %1$s = %2$s %3$s</string>
+    <string name="last_updated">Last updated: %1$s</string>
+    <string name="today_at">Today, %1$s</string>
+    <string name="attribution" translatable="false">Rates By Exchange Rate API</string>
+
+    <string name="loading_rates">Loading exchange rates…</string>
+    <string name="retry">Retry</string>
+    <string name="error_no_connection">No internet connection. Check your connection and try again.</string>
+    <string name="error_timeout">The rate service took too long to respond.</string>
+    <string name="error_rate_limited">Too many requests. Please try again in a few minutes.</string>
+    <string name="error_service">The rate service is currently unavailable.</string>
+    <string name="error_invalid_response">The rate service returned invalid data.</string>
+    <string name="error_rates_unavailable">Exchange rates are currently unavailable.</string>
+    <string name="error_missing_rate">No exchange rate is available for %1$s.</string>
 </resources>

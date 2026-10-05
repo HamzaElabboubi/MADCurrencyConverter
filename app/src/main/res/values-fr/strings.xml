@@ -1,0 +1,28 @@
+<resources>
+    <string name="amount_label">Montant</string>
+    <string name="from_label">De</string>
+    <string name="to_label">Vers</string>
+    <string name="swap_currencies">Inverser les devises</string>
+
+    <string name="currency_mad">Dirham marocain</string>
+    <string name="currency_usd">Dollar américain</string>
+    <string name="currency_eur">Euro</string>
+    <string name="currency_gbp">Livre sterling</string>
+
+    <string name="enter_amount_hint">Saisissez un montant à convertir</string>
+    <string name="error_invalid_amount">Saisissez un nombre valide, ex. 1250,50 ou 1250.50</string>
+    <string name="error_amount_too_large">Montant trop élevé. Maximum : %1$s</string>
+
+    <string name="last_updated">Dernière mise à jour : %1$s</string>
+    <string name="today_at">Aujourd\'hui, %1$s</string>
+
+    <string name="loading_rates">Chargement des taux de change…</string>
+    <string name="retry">Réessayer</string>
+    <string name="error_no_connection">Pas de connexion Internet. Vérifiez votre connexion et réessayez.</string>
+    <string name="error_timeout">Le service de taux a mis trop de temps à répondre.</string>
+    <string name="error_rate_limited">Trop de requêtes. Réessayez dans quelques minutes.</string>
+    <string name="error_service">Le service de taux est actuellement indisponible.</string>
+    <string name="error_invalid_response">Le service de taux a renvoyé des données invalides.</string>
+    <string name="error_rates_unavailable">Les taux de change sont actuellement indisponibles.</string>
+    <string name="error_missing_rate">Aucun taux de change disponible pour %1$s.</string>
+</resources>
