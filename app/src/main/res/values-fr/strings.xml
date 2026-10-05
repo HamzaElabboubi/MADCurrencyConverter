@@ -25,4 +25,6 @@
     <string name="error_invalid_response">Le service de taux a renvoyé des données invalides.</string>
     <string name="error_rates_unavailable">Les taux de change sont actuellement indisponibles.</string>
     <string name="error_missing_rate">Aucun taux de change disponible pour %1$s.</string>
+    <string name="stale_title">Taux possiblement non à jour</string>
+    <string name="stale_message">Affichage des derniers taux enregistrés.</string>
 </resources>

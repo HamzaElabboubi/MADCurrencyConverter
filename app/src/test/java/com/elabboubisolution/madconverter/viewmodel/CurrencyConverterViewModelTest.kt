@@ -1,9 +1,9 @@
 package com.elabboubisolution.madconverter.viewmodel
 
-import com.elabboubisolution.madconverter.data.remote.RateProvider
+import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
+import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
-import com.elabboubisolution.madconverter.domain.model.RateFetchResult
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -47,14 +47,14 @@ class CurrencyConverterViewModelTest {
 
     @Test
     fun `starts loading then shows rate once loaded`() = runTest(dispatcher) {
-        val provider = FakeRateProvider()
-        val viewModel = CurrencyConverterViewModel(provider)
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
         dispatcher.scheduler.runCurrent()
 
         assertTrue(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.rate)
 
-        provider.complete(RateFetchResult.Success(snapshot))
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
 
         val state = viewModel.uiState.value
@@ -77,12 +77,12 @@ class CurrencyConverterViewModelTest {
 
     @Test
     fun `amount typed while loading is converted once rates arrive`() = runTest(dispatcher) {
-        val provider = FakeRateProvider()
-        val viewModel = CurrencyConverterViewModel(provider)
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
         viewModel.onAmountChange("1000")
         assertNull(viewModel.uiState.value.result)
 
-        provider.complete(RateFetchResult.Success(snapshot))
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
 
         assertEquals(BigDecimal("100.81"), viewModel.uiState.value.result?.convertedAmount)
@@ -134,9 +134,9 @@ class CurrencyConverterViewModelTest {
 
     @Test
     fun `network error is exposed and retry recovers`() = runTest(dispatcher) {
-        val provider = FakeRateProvider()
-        val viewModel = CurrencyConverterViewModel(provider)
-        provider.complete(RateFetchResult.Failure(RateFetchError.NoConnection))
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
         assertEquals(RateFetchError.NoConnection, viewModel.uiState.value.error)
@@ -146,23 +146,23 @@ class CurrencyConverterViewModelTest {
         assertTrue(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.error)
 
-        provider.complete(RateFetchResult.Success(snapshot))
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
 
         assertNull(viewModel.uiState.value.error)
-        assertEquals(2, provider.calls)
+        assertEquals(2, repository.calls)
     }
 
     @Test
     fun `retry while a request is running does not start another`() = runTest(dispatcher) {
-        val provider = FakeRateProvider()
-        val viewModel = CurrencyConverterViewModel(provider)
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
         dispatcher.scheduler.runCurrent()
 
         viewModel.onRetry()
         dispatcher.scheduler.runCurrent()
 
-        assertEquals(1, provider.calls)
+        assertEquals(1, repository.calls)
     }
 
     @Test
@@ -179,26 +179,66 @@ class CurrencyConverterViewModelTest {
         assertNull(state.result)
     }
 
+    @Test
+    fun `stale cached rates are flagged and still convert`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onAmountChange("1000")
+
+        val state = viewModel.uiState.value
+        assertTrue(state.hasRates)
+        assertTrue(state.isStale)
+        assertEquals(RateFetchError.Timeout, state.refreshError)
+        assertNull("stale data is not a load error", state.error)
+        assertEquals(BigDecimal("100.81"), state.result?.convertedAmount)
+    }
+
+    @Test
+    fun `retry from stale keeps showing rates while refreshing then clears the flag`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onRetry()
+        dispatcher.scheduler.runCurrent()
+        val refreshing = viewModel.uiState.value
+        assertTrue(refreshing.isLoading)
+        assertTrue(refreshing.hasRates)
+        assertEquals(BigDecimal("100.81"), refreshing.result?.convertedAmount)
+
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        val refreshed = viewModel.uiState.value
+        assertFalse(refreshed.isLoading)
+        assertFalse(refreshed.isStale)
+        assertNull(refreshed.refreshError)
+    }
+
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
-        val provider = FakeRateProvider()
-        val viewModel = CurrencyConverterViewModel(provider)
-        provider.complete(RateFetchResult.Success(rates))
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository)
+        repository.complete(RatesResult.Available(rates, isStale = false))
         dispatcher.scheduler.runCurrent()
         return viewModel
     }
 
     /** Each call suspends until the test completes it, so loading states can be observed. */
-    private class FakeRateProvider : RateProvider {
+    private class FakeRepository : CurrencyRepository {
         var calls = 0
             private set
-        private var pending = CompletableDeferred<RateFetchResult>()
+        private var pending = CompletableDeferred<RatesResult>()
 
-        override suspend fun fetchLatestRates(base: Currency): RateFetchResult {
+        override suspend fun getRates(): RatesResult {
             calls++
             return pending.await().also { pending = CompletableDeferred() }
         }
 
-        fun complete(result: RateFetchResult) {
+        fun complete(result: RatesResult) {
             pending.complete(result)
         }
     }

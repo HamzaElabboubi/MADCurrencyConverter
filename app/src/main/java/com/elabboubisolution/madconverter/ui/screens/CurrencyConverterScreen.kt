@@ -37,6 +37,7 @@ import com.elabboubisolution.madconverter.ui.components.HintMessage
 import com.elabboubisolution.madconverter.ui.components.LoadingState
 import com.elabboubisolution.madconverter.ui.components.RateInfo
 import com.elabboubisolution.madconverter.ui.components.ResultCard
+import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
 import com.elabboubisolution.madconverter.ui.components.SwapButton
 import com.elabboubisolution.madconverter.ui.format.message
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
@@ -125,30 +126,41 @@ fun CurrencyConverterContent(
 
 @Composable
 private fun ConversionSection(state: ConverterUiState, onRetry: () -> Unit) {
-    when {
-        state.isLoading -> LoadingState()
+    if (!state.hasRates) {
+        when {
+            state.isLoading -> LoadingState()
+            state.error != null -> ErrorState(message = state.error.message(), onRetry = onRetry)
+        }
+        return
+    }
 
-        state.error != null -> ErrorState(message = state.error.message(), onRetry = onRetry)
-
-        state.missingRate != null -> ErrorState(
-            message = stringResource(R.string.error_missing_rate, state.missingRate.code),
-            onRetry = onRetry,
-        )
-
-        else -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            when {
-                state.result != null -> ResultCard(conversion = state.result)
-                // Invalid or too-large amounts are explained under the field itself.
-                state.amountError == null -> HintMessage(stringResource(R.string.enter_amount_hint))
-            }
-            state.rate?.let { rate ->
-                RateInfo(
-                    from = state.from,
-                    to = state.to,
-                    rate = rate,
-                    lastUpdatedEpochSeconds = state.lastUpdatedEpochSeconds,
-                )
-            }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        if (state.isStale) {
+            StaleRateBanner(
+                reason = state.refreshError?.message(),
+                isRefreshing = state.isLoading,
+                onRetry = onRetry,
+            )
+        }
+        if (state.missingRate != null) {
+            ErrorState(
+                message = stringResource(R.string.error_missing_rate, state.missingRate.code),
+                onRetry = onRetry,
+            )
+            return@Column
+        }
+        when {
+            state.result != null -> ResultCard(conversion = state.result)
+            // Invalid or too-large amounts are explained under the field itself.
+            state.amountError == null -> HintMessage(stringResource(R.string.enter_amount_hint))
+        }
+        state.rate?.let { rate ->
+            RateInfo(
+                from = state.from,
+                to = state.to,
+                rate = rate,
+                lastUpdatedEpochSeconds = state.lastUpdatedEpochSeconds,
+            )
         }
     }
 }
@@ -197,6 +209,11 @@ private fun InvalidAmountPreview() =
 @Composable
 private fun MissingRatePreview() =
     ContentPreview(previewConverted.copy(to = Currency.GBP, rate = null, result = null, missingRate = Currency.GBP))
+
+@PreviewLightDark
+@Composable
+private fun StalePreview() =
+    ContentPreview(previewConverted.copy(isStale = true, refreshError = RateFetchError.NoConnection))
 
 @Preview(showBackground = true, widthDp = 320, locale = "fr")
 @Composable

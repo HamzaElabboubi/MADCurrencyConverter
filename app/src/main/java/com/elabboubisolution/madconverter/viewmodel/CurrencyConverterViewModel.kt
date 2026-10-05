@@ -7,14 +7,14 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.elabboubisolution.madconverter.MadConverterApplication
-import com.elabboubisolution.madconverter.data.remote.RateProvider
+import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
+import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.AmountInput
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.ConversionResult
 import com.elabboubisolution.madconverter.domain.CurrencyConverter
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
-import com.elabboubisolution.madconverter.domain.model.RateFetchResult
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,7 +30,10 @@ enum class AmountError { INVALID, TOO_LARGE }
  * Everything the converter screen renders. Fields after [to] are derived from the inputs
  * and the loaded rates; only the ViewModel computes them.
  *
- * @property error why rates could not be loaded (null while loading or once loaded).
+ * @property isLoading a download is in progress (rates already shown, if any, stay visible).
+ * @property error why no rates at all could be loaded.
+ * @property isStale the displayed rates come from the local cache and may not be current.
+ * @property refreshError why fresh rates could not be downloaded, when [isStale].
  * @property missingRate a selected currency the loaded rates do not cover.
  * @property rate value of 1 [from] in [to], unrounded.
  * @property result conversion of a valid, non-empty amount.
@@ -41,15 +44,20 @@ data class ConverterUiState(
     val to: Currency = Currency.USD,
     val isLoading: Boolean = true,
     val error: RateFetchError? = null,
+    val isStale: Boolean = false,
+    val refreshError: RateFetchError? = null,
     val amountError: AmountError? = null,
     val missingRate: Currency? = null,
     val rate: BigDecimal? = null,
     val result: Conversion? = null,
     val lastUpdatedEpochSeconds: Long? = null,
-)
+) {
+    /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
+    val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
+}
 
 class CurrencyConverterViewModel(
-    private val rateProvider: RateProvider,
+    private val repository: CurrencyRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
@@ -84,12 +92,19 @@ class CurrencyConverterViewModel(
         if (loadJob?.isActive == true) return
         updateState { it.copy(isLoading = true, error = null) }
         loadJob = viewModelScope.launch {
-            when (val result = rateProvider.fetchLatestRates(RATES_BASE)) {
-                is RateFetchResult.Success -> {
+            when (val result = repository.getRates()) {
+                is RatesResult.Available -> {
                     snapshot = result.snapshot
-                    updateState { it.copy(isLoading = false, error = null) }
+                    updateState {
+                        it.copy(
+                            isLoading = false,
+                            error = null,
+                            isStale = result.isStale,
+                            refreshError = result.refreshError,
+                        )
+                    }
                 }
-                is RateFetchResult.Failure -> updateState { it.copy(isLoading = false, error = result.error) }
+                is RatesResult.Unavailable -> updateState { it.copy(isLoading = false, error = result.error) }
             }
         }
     }
@@ -99,14 +114,12 @@ class CurrencyConverterViewModel(
     }
 
     companion object {
-        /** One request with this base covers every supported pair. */
-        private val RATES_BASE = Currency.MAD
         private const val MAX_INPUT_LENGTH = 24
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as MadConverterApplication
-                CurrencyConverterViewModel(app.container.rateProvider)
+                CurrencyConverterViewModel(app.container.currencyRepository)
             }
         }
     }

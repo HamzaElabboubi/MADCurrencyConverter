@@ -32,4 +32,6 @@
     <string name="error_invalid_response">The rate service returned invalid data.</string>
     <string name="error_rates_unavailable">Exchange rates are currently unavailable.</string>
     <string name="error_missing_rate">No exchange rate is available for %1$s.</string>
+    <string name="stale_title">Rates may not be up to date</string>
+    <string name="stale_message">Showing the last saved rates.</string>
 </resources>

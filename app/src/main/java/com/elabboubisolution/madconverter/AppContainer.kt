@@ -1,17 +1,26 @@
 package com.elabboubisolution.madconverter
 
+import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.preferencesDataStore
+import com.elabboubisolution.madconverter.data.local.RateCache
 import com.elabboubisolution.madconverter.data.remote.ErApiRateProvider
 import com.elabboubisolution.madconverter.data.remote.ExchangeRateApi
 import com.elabboubisolution.madconverter.data.remote.RateProvider
+import com.elabboubisolution.madconverter.data.repository.CachingCurrencyRepository
+import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
+
+private val Context.ratesDataStore: DataStore<Preferences> by preferencesDataStore(name = "rates")
 
 /**
  * Manual dependency container, created once by [MadConverterApplication].
  * Data sources, repositories and ViewModel factories are wired here as they are added.
  */
-class AppContainer {
+class AppContainer(context: Context) {
 
     val json: Json = Json {
         ignoreUnknownKeys = true
@@ -23,7 +32,12 @@ class AppContainer {
         .callTimeout(NETWORK_TIMEOUT_SECONDS * 2, TimeUnit.SECONDS)
         .build()
 
-    val rateProvider: RateProvider = ErApiRateProvider(ExchangeRateApi.create(okHttpClient, json))
+    private val rateProvider: RateProvider = ErApiRateProvider(ExchangeRateApi.create(okHttpClient, json))
+
+    val currencyRepository: CurrencyRepository = CachingCurrencyRepository(
+        provider = rateProvider,
+        cache = RateCache(context.applicationContext.ratesDataStore, json),
+    )
 
     private companion object {
         const val NETWORK_TIMEOUT_SECONDS = 10L

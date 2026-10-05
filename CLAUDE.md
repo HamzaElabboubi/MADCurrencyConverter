@@ -4,7 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-"MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. The project is currently the stock Android Studio "Empty Activity" template: `MainActivity` renders a placeholder `Greeting` composable, and there is no converter logic, networking, persistence, ViewModel, or DI yet. The only tests are the template `ExampleUnitTest` / `ExampleInstrumentedTest`.
+"MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. Phases 1–5 of the spec are done: API, conversion logic, UI and offline cache. AdMob, polish and the README are still to come.
+
+How the data flows:
+- **`data/remote`**: `ErApiRateProvider` calls ExchangeRate-API's open endpoint (`open.er-api.com/v6/latest/MAD`, no key) through Retrofit and turns every failure into a typed `RateFetchError`. Errors arrive as HTTP 200 with `"result":"error"`, so check the body as well as the status. Rates are parsed straight to `BigDecimal`.
+- **`data/local/RateCache`**: stores the last successful snapshot in DataStore as JSON, with rates kept as strings. Corrupt data reads as an empty cache.
+- **`data/repository/CachingCurrencyRepository`**: serves the cache as current until the provider's `nextUpdateEpochSeconds`, then downloads. It never downloads more than once an hour, which the provider requires. If a download fails, it returns the cache with `isStale = true`, and the UI must then show `StaleRateBanner`.
+- **`domain/CurrencyConverter`**: pure-JVM `BigDecimal` math. Cross rates are computed from the single MAD-based snapshot. It also parses amounts with `,` or `.` as the decimal separator.
+- **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`.
+- **UI**: lives in `ui/screens` and `ui/components`. Strings come in English (default) and French (`values-fr`). ExchangeRate-API's terms require the "Rates By Exchange Rate API" attribution link in `RateInfo`.
 
 **`PROJECT_SPEC.md` is the source of truth for what to build.** Read it before starting work. Key constraints from it:
 
