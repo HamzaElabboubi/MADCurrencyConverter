@@ -37,6 +37,16 @@ How the data flows:
 - Conversion math must be testable as plain JVM code without Android dependencies. Required tests: MAD→USD, USD→MAD, MAD→EUR, decimals, zero, invalid amount, missing rate.
 - Work in the spec's phases (setup → API → logic → UI → caching → ads → tests → polish → README). After each phase, build, run tests, and check for deprecations. Don't claim a phase works without verifying it.
 
+## Conversion history and Copy/Share (Phase 9)
+
+- History is entirely local, in its own DataStore file (`conversion_history`, a JSON list via `DataStoreHistoryStore`). It is never uploaded, never sent to analytics, AdMob or the rate provider. It only leaves the device when the user shares through Android's share sheet.
+- A conversion is recorded **only** by an explicit Copy or Share of the main result (`onResultCopied` / `onResultShared`). Typing, swapping, currency picking, Quick Conversions, favorite toggles, rate refreshes and recomposition must never create history.
+- Deduplication rule (`domain/ConversionHistory`): a new entry is skipped when the most recent entry has the same pair, amount, converted amount and rate, and is less than `DEDUP_WINDOW_MILLIS` (10 min) old. History keeps at most `MAX_ENTRIES` (50), dropping the oldest.
+- Copy/Share must never trigger an exchange-rate refresh. They work offline, and stale rates are recorded with `wasStale = true`.
+- Restoring an entry restores source, target and amount, then recalculates with the current rate snapshot. Stored converted amounts and rates are historical and must never be presented as current rates.
+- Copy/Share text comes from `ui/format/ConversionText`, which the screen also uses, so the copied text matches the display.
+- On Android 13+ the system shows its own copy confirmation, so the "Conversion copied" Snackbar is only shown below API 33.
+
 ## Commands
 
 Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git Bash).
@@ -79,7 +89,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
   In Phase 4 the "To" dropdown arrow was already in its expanded state before any scripted input.
 
-  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in Phase 8 were also clean. It remains non-reproducible and must not be marked as fixed.
+  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in each of Phases 8 and 9 were also clean. It remains non-reproducible and must not be marked as fixed.
 
   Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.

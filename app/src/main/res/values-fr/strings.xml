@@ -39,4 +39,25 @@
 
     <string name="quick_conversions_title">Conversions rapides</string>
     <string name="quick_conversion_description">%1$s, %2$s : environ %3$s. Appuyez deux fois pour en faire la conversion principale.</string>
+
+    <string name="copy_conversion">Copier la conversion</string>
+    <string name="share_conversion">Partager la conversion</string>
+    <string name="conversion_copied">Conversion copiée</string>
+    <string name="share_chooser_title">Partager la conversion</string>
+    <string name="share_subject">Conversion de devises</string>
+    <string name="no_share_app">Aucune application disponible pour partager</string>
+
+    <string name="history_open">Historique des conversions</string>
+    <string name="history_title">Historique</string>
+    <string name="history_clear_all">Tout effacer</string>
+    <string name="history_clear_title">Effacer l\'historique ?</string>
+    <string name="history_clear_message">Toutes les conversions enregistrées seront supprimées de cet appareil.</string>
+    <string name="history_clear_confirm">Effacer</string>
+    <string name="cancel">Annuler</string>
+    <string name="history_delete_entry">Supprimer cette conversion</string>
+    <string name="history_empty_title">Aucune conversion pour l\'instant</string>
+    <string name="history_empty_message">Les conversions que vous copiez ou partagez apparaîtront ici.</string>
+    <string name="history_stale_rate">Taux enregistré possiblement non à jour</string>
+    <string name="history_entry_description">%1$s converti en %2$s, %3$s. Appuyez deux fois pour reconvertir ce montant aux taux actuels.</string>
+    <string name="yesterday_at">Hier, %1$s</string>
 </resources>

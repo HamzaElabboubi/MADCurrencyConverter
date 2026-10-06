@@ -1,5 +1,10 @@
 package com.elabboubisolution.madconverter.ui.screens
 
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,16 +16,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -32,24 +47,29 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
+import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.ui.components.AmountField
 import com.elabboubisolution.madconverter.ui.components.CurrencyPickerSheet
 import com.elabboubisolution.madconverter.ui.components.CurrencySelectorField
 import com.elabboubisolution.madconverter.ui.components.ErrorState
 import com.elabboubisolution.madconverter.ui.components.HintMessage
+import com.elabboubisolution.madconverter.ui.components.HistorySheet
 import com.elabboubisolution.madconverter.ui.components.LoadingState
 import com.elabboubisolution.madconverter.ui.components.QuickConversionsSection
 import com.elabboubisolution.madconverter.ui.components.RateInfo
 import com.elabboubisolution.madconverter.ui.components.ResultCard
 import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
 import com.elabboubisolution.madconverter.ui.components.SwapButton
+import com.elabboubisolution.madconverter.ui.format.ConversionText
+import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.message
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.viewmodel.AmountError
 import com.elabboubisolution.madconverter.viewmodel.ConverterUiState
 import com.elabboubisolution.madconverter.viewmodel.CurrencyConverterViewModel
 import java.math.BigDecimal
+import kotlinx.coroutines.launch
 
 @Composable
 fun CurrencyConverterScreen(
@@ -57,20 +77,71 @@ fun CurrencyConverterScreen(
     viewModel: CurrencyConverterViewModel = viewModel(factory = CurrencyConverterViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    CurrencyConverterContent(
-        state = state,
-        onAmountChange = viewModel::onAmountChange,
-        onFromSelected = viewModel::onFromCurrencySelected,
-        onToSelected = viewModel::onToCurrencySelected,
-        onSwap = viewModel::onSwapCurrencies,
-        onRetry = viewModel::onRetry,
-        onToggleFavorite = viewModel::onToggleFavorite,
-        onQuickConversionSelected = viewModel::onQuickConversionSelected,
-        modifier = modifier,
-    )
+    val context = LocalContext.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val locale = currentLocale()
+    val copiedMessage = stringResource(R.string.conversion_copied)
+    val noShareAppMessage = stringResource(R.string.no_share_app)
+    val shareSubject = stringResource(R.string.share_subject)
+    val chooserTitle = stringResource(R.string.share_chooser_title)
+
+    Box(modifier = modifier) {
+        CurrencyConverterContent(
+            state = state,
+            onAmountChange = viewModel::onAmountChange,
+            onFromSelected = viewModel::onFromCurrencySelected,
+            onToSelected = viewModel::onToCurrencySelected,
+            onSwap = viewModel::onSwapCurrencies,
+            onRetry = viewModel::onRetry,
+            onToggleFavorite = viewModel::onToggleFavorite,
+            onQuickConversionSelected = viewModel::onQuickConversionSelected,
+            onCopy = { conversion ->
+                val text = ConversionText.shareText(conversion, locale)
+                scope.launch {
+                    clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(shareSubject, text)))
+                    // Android 13+ already shows its own copy confirmation; avoid a duplicate.
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                        snackbarHostState.showSnackbar(copiedMessage)
+                    }
+                }
+                viewModel.onResultCopied()
+            },
+            onShare = { conversion ->
+                val text = ConversionText.shareText(conversion, locale)
+                if (shareText(context, text, shareSubject, chooserTitle)) {
+                    viewModel.onResultShared()
+                } else {
+                    scope.launch { snackbarHostState.showSnackbar(noShareAppMessage) }
+                }
+            },
+            onHistoryEntrySelected = viewModel::onHistoryEntrySelected,
+            onHistoryEntryDeleted = { viewModel.onHistoryEntryDeleted(it.id) },
+            onHistoryCleared = viewModel::onHistoryCleared,
+        )
+        SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/** Opens Android's standard share sheet with plain text; false if no app can receive it. */
+private fun shareText(context: Context, text: String, subject: String, chooserTitle: String): Boolean {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_TEXT, text)
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+    }
+    return try {
+        context.startActivity(Intent.createChooser(send, chooserTitle))
+        true
+    } catch (_: ActivityNotFoundException) {
+        false
+    }
 }
 
 private enum class PickerSide { FROM, TO }
+
+private val noConversionAction: (Conversion) -> Unit = {}
 
 @Composable
 fun CurrencyConverterContent(
@@ -83,8 +154,14 @@ fun CurrencyConverterContent(
     onToggleFavorite: (Currency) -> Unit,
     onQuickConversionSelected: (Currency) -> Unit,
     modifier: Modifier = Modifier,
+    onCopy: (Conversion) -> Unit = noConversionAction,
+    onShare: (Conversion) -> Unit = noConversionAction,
+    onHistoryEntrySelected: (HistoryEntry) -> Unit = {},
+    onHistoryEntryDeleted: (HistoryEntry) -> Unit = {},
+    onHistoryCleared: () -> Unit = {},
 ) {
     var pickerSide by rememberSaveable { mutableStateOf<PickerSide?>(null) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -100,11 +177,18 @@ fun CurrencyConverterContent(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Text(
-                text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.semantics { heading() },
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { heading() },
+                )
+                IconButton(onClick = { showHistory = true }) {
+                    Icon(painterResource(R.drawable.ic_history), stringResource(R.string.history_open))
+                }
+            }
 
             AmountField(
                 value = state.amountInput,
@@ -132,7 +216,13 @@ fun CurrencyConverterContent(
                 )
             }
 
-            ConversionSection(state = state, onRetry = onRetry, onQuickConversionSelected = onQuickConversionSelected)
+            ConversionSection(
+                state = state,
+                onRetry = onRetry,
+                onQuickConversionSelected = onQuickConversionSelected,
+                onCopy = onCopy,
+                onShare = onShare,
+            )
         }
     }
 
@@ -148,6 +238,16 @@ fun CurrencyConverterContent(
             onDismiss = { pickerSide = null },
         )
     }
+
+    if (showHistory) {
+        HistorySheet(
+            entries = state.history,
+            onSelect = onHistoryEntrySelected,
+            onDelete = onHistoryEntryDeleted,
+            onClearAll = onHistoryCleared,
+            onDismiss = { showHistory = false },
+        )
+    }
 }
 
 @Composable
@@ -155,6 +255,8 @@ private fun ConversionSection(
     state: ConverterUiState,
     onRetry: () -> Unit,
     onQuickConversionSelected: (Currency) -> Unit,
+    onCopy: (Conversion) -> Unit,
+    onShare: (Conversion) -> Unit,
 ) {
     if (!state.hasRates) {
         when {
@@ -180,7 +282,11 @@ private fun ConversionSection(
             return@Column
         }
         when {
-            state.result != null -> ResultCard(conversion = state.result)
+            state.result != null -> ResultCard(
+                conversion = state.result,
+                onCopy = { onCopy(state.result) },
+                onShare = { onShare(state.result) },
+            )
             // Invalid or too-large amounts are explained under the field itself.
             state.amountError == null -> HintMessage(stringResource(R.string.enter_amount_hint))
         }

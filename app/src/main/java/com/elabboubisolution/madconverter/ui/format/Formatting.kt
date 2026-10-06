@@ -63,3 +63,19 @@ fun formatLastUpdated(epochSeconds: Long): String {
         )
     }
 }
+
+/** "Today, 12:45", "Yesterday, 18:20" or a short localized date and time. */
+@Composable
+fun formatHistoryTimestamp(epochMillis: Long): String {
+    val context = LocalContext.current
+    val time = DateUtils.formatDateTime(context, epochMillis, DateUtils.FORMAT_SHOW_TIME)
+    return when {
+        DateUtils.isToday(epochMillis) -> stringResource(R.string.today_at, time)
+        DateUtils.isToday(epochMillis + DateUtils.DAY_IN_MILLIS) -> stringResource(R.string.yesterday_at, time)
+        else -> DateUtils.formatDateTime(
+            context,
+            epochMillis,
+            DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_ABBREV_MONTH,
+        )
+    }
+}

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.elabboubisolution.madconverter.MadConverterApplication
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
+import com.elabboubisolution.madconverter.data.local.HistoryStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.AmountInput
@@ -16,6 +17,7 @@ import com.elabboubisolution.madconverter.domain.ConversionResult
 import com.elabboubisolution.madconverter.domain.CurrencyConverter
 import com.elabboubisolution.madconverter.domain.QuickConversions
 import com.elabboubisolution.madconverter.domain.model.Currency
+import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
 import kotlinx.coroutines.Job
@@ -42,6 +44,7 @@ enum class AmountError { INVALID, TOO_LARGE }
  * @property favorites currencies the user starred, listed first in the currency picker.
  * @property quickConversions [result]'s amount converted into up to 3 other favorites, from the
  *   same rates; empty when there is no result.
+ * @property history copied/shared conversions, newest first (historical values, not current).
  */
 data class ConverterUiState(
     val amountInput: String = "",
@@ -58,6 +61,7 @@ data class ConverterUiState(
     val lastUpdatedEpochSeconds: Long? = null,
     val favorites: Set<Currency> = emptySet(),
     val quickConversions: List<Conversion> = emptyList(),
+    val history: List<HistoryEntry> = emptyList(),
 ) {
     /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
     val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
@@ -66,6 +70,7 @@ data class ConverterUiState(
 class CurrencyConverterViewModel(
     private val repository: CurrencyRepository,
     private val favoritesStore: FavoritesStore,
+    private val historyStore: HistoryStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
@@ -78,6 +83,9 @@ class CurrencyConverterViewModel(
         loadRates()
         viewModelScope.launch {
             favoritesStore.favorites.collect { favorites -> updateState { it.copy(favorites = favorites) } }
+        }
+        viewModelScope.launch {
+            historyStore.entries.collect { history -> updateState { it.copy(history = history) } }
         }
     }
 
@@ -97,6 +105,33 @@ class CurrencyConverterViewModel(
 
     /** Makes a quick conversion the main one: only the target changes. */
     fun onQuickConversionSelected(currency: Currency) = onToCurrencySelected(currency)
+
+    /** The user copied the main result: the only events, with [onResultShared], that record history. */
+    fun onResultCopied() = recordCurrentConversion()
+
+    fun onResultShared() = recordCurrentConversion()
+
+    /**
+     * Restores the inputs of a past conversion. The result is recalculated from the current
+     * rates; the stored historical amount is never shown as today's value.
+     */
+    fun onHistoryEntrySelected(entry: HistoryEntry) = updateState {
+        it.copy(from = entry.from, to = entry.to, amountInput = entry.amount.toPlainString())
+    }
+
+    fun onHistoryEntryDeleted(id: String) {
+        viewModelScope.launch { historyStore.delete(id) }
+    }
+
+    fun onHistoryCleared() {
+        viewModelScope.launch { historyStore.clear() }
+    }
+
+    private fun recordCurrentConversion() {
+        val state = _uiState.value
+        val result = state.result ?: return
+        viewModelScope.launch { historyStore.record(result, wasStale = state.isStale) }
+    }
 
     fun onSwapCurrencies() = updateState { it.copy(from = it.to, to = it.from) }
 
@@ -138,7 +173,11 @@ class CurrencyConverterViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as MadConverterApplication
-                CurrencyConverterViewModel(app.container.currencyRepository, app.container.favoritesStore)
+                CurrencyConverterViewModel(
+                    app.container.currencyRepository,
+                    app.container.favoritesStore,
+                    app.container.historyStore,
+                )
             }
         }
     }

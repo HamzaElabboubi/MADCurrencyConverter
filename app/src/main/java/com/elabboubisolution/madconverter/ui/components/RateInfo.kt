@@ -19,9 +19,8 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.model.Currency
-import com.elabboubisolution.madconverter.ui.format.RATE_FRACTION_DIGITS
+import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.currentLocale
-import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.formatLastUpdated
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
@@ -40,12 +39,7 @@ fun RateInfo(
     val locale = currentLocale()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = stringResource(
-                R.string.exchange_rate,
-                from.code,
-                formatDecimal(rate, locale, minDigits = RATE_FRACTION_DIGITS),
-                to.code,
-            ),
+            text = ConversionText.rate(from, to, rate, locale),
             style = MaterialTheme.typography.titleMedium,
         )
         if (lastUpdatedEpochSeconds != null) {
