@@ -272,8 +272,98 @@ class CurrencyConverterViewModelTest {
         viewModel.onToggleFavorite(Currency.USD)
         dispatcher.scheduler.runCurrent()
 
+        // Only favorites and the quick conversions derived from them may change.
         val after = viewModel.uiState.value
-        assertEquals(before.copy(favorites = after.favorites), after)
+        assertEquals(before.copy(favorites = after.favorites, quickConversions = after.quickConversions), after)
+    }
+
+    // --- Quick conversions ---
+
+    @Test
+    fun `no quick conversions without an amount`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        favorites.set(Currency.EUR, Currency.GBP, Currency.AED)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(emptyList<Currency>(), viewModel.uiState.value.quickConversions.map { it.to })
+
+        viewModel.onAmountChange("12a")
+        assertEquals(emptyList<Currency>(), viewModel.uiState.value.quickConversions.map { it.to })
+    }
+
+    @Test
+    fun `quick conversions follow the amount and favorites`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        favorites.set(Currency.MAD, Currency.USD, Currency.EUR, Currency.AED, Currency.GBP)
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onAmountChange("1000")
+        assertEquals(
+            listOf(Currency.EUR to BigDecimal("89.73"), Currency.GBP to BigDecimal("76.29"), Currency.AED to BigDecimal("368.29")),
+            viewModel.uiState.value.quickConversions.map { it.to to it.convertedAmount },
+        )
+
+        viewModel.onAmountChange("1234,56")
+        assertEquals(
+            listOf(BigDecimal("110.78"), BigDecimal("94.19"), BigDecimal("454.67")),
+            viewModel.uiState.value.quickConversions.map { it.convertedAmount },
+        )
+
+        favorites.set(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf(Currency.EUR), viewModel.uiState.value.quickConversions.map { it.to })
+    }
+
+    @Test
+    fun `tapping a quick conversion changes only the target`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        favorites.set(Currency.MAD, Currency.USD, Currency.EUR, Currency.AED, Currency.GBP)
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onQuickConversionSelected(Currency.EUR)
+
+        val state = viewModel.uiState.value
+        assertEquals(Currency.MAD, state.from)
+        assertEquals(Currency.EUR, state.to)
+        assertEquals("1000", state.amountInput)
+        assertEquals(BigDecimal("89.73"), state.result?.convertedAmount)
+        // The previous target (USD) is a favorite again eligible, EUR is now excluded.
+        assertEquals(listOf(Currency.USD, Currency.GBP, Currency.AED), state.quickConversions.map { it.to })
+    }
+
+    @Test
+    fun `stale cached rates still produce quick conversions`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onAmountChange("1000")
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isStale)
+        assertEquals(listOf(Currency.EUR), state.quickConversions.map { it.to })
+        assertEquals(BigDecimal("89.73"), state.quickConversions.single().convertedAmount)
+    }
+
+    @Test
+    fun `typing and tapping quick conversions never reload rates`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        favorites.set(Currency.EUR, Currency.GBP, Currency.AED, Currency.JPY)
+        dispatcher.scheduler.runCurrent()
+
+        listOf("1", "10", "100", "1000", "1000,5").forEach(viewModel::onAmountChange)
+        viewModel.onQuickConversionSelected(Currency.GBP)
+        viewModel.onQuickConversionSelected(Currency.AED)
+        viewModel.onSwapCurrencies()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(1, repository.calls)
+        assertEquals(0, favorites.writes)
     }
 
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
@@ -288,8 +378,18 @@ class CurrencyConverterViewModelTest {
         private val state = MutableStateFlow(setOf(Currency.MAD, Currency.EUR, Currency.USD))
         override val favorites: StateFlow<Set<Currency>> = state
 
+        /** Persisted writes, i.e. user favorite toggles. */
+        var writes = 0
+            private set
+
         override suspend fun setFavorite(currency: Currency, isFavorite: Boolean) {
+            writes++
             state.value = if (isFavorite) state.value + currency else state.value - currency
+        }
+
+        /** Simulates favorites changed elsewhere (not counted as a write). */
+        fun set(vararg currencies: Currency) {
+            state.value = currencies.toSet()
         }
     }
 

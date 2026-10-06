@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -63,7 +64,14 @@ fun StaleRateBanner(
                         strokeWidth = 3.dp,
                     )
                 } else {
-                    TextButton(onClick = onRetry) { Text(stringResource(R.string.retry)) }
+                    // Same color as the banner text: the default primary color can lack contrast
+                    // on tertiaryContainer (observed in dark mode).
+                    TextButton(
+                        onClick = onRetry,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                        ),
+                    ) { Text(stringResource(R.string.retry)) }
                 }
             }
         }

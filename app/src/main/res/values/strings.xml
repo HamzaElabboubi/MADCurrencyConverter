@@ -42,4 +42,8 @@
     <string name="add_favorite">Add %1$s to favorites</string>
     <string name="remove_favorite">Remove %1$s from favorites</string>
     <string name="selected_currency">Selected</string>
+
+    <string name="quick_conversions_title">Quick conversions</string>
+    <string name="approx_amount" translatable="false">≈ %1$s</string>
+    <string name="quick_conversion_description">%1$s, %2$s: about %3$s. Double tap to make it the main conversion.</string>
 </resources>

@@ -36,4 +36,7 @@
     <string name="add_favorite">Ajouter %1$s aux favoris</string>
     <string name="remove_favorite">Retirer %1$s des favoris</string>
     <string name="selected_currency">Sélectionnée</string>
+
+    <string name="quick_conversions_title">Conversions rapides</string>
+    <string name="quick_conversion_description">%1$s, %2$s : environ %3$s. Appuyez deux fois pour en faire la conversion principale.</string>
 </resources>

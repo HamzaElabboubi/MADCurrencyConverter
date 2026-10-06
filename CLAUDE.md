@@ -14,6 +14,11 @@ How the data flows:
 - **`domain/CurrencySearch`**: pure-JVM picker search over code, localized name and English name. It ignores case and accents and returns favorites first.
 - **`data/local/FavoritesStore`**: favorites live in a separate DataStore (`user_preferences`). The defaults are MAD/EUR/USD until the user changes them.
 - **Partial rate sets**: the provider omits currencies missing from a response instead of failing. The repository refreshes a cache that lacks supported currencies, still at most once an hour, without marking it stale.
+- **`domain/QuickConversions`** (Phase 8): converts the main amount into the user's **favorites only**.
+  - The source and the current target are excluded, with at most 3 results, in picker (`Currency` declaration) order.
+  - There is deliberately no user-defined order, so don't change favorites persistence to add one.
+  - It reuses `CurrencyConverter.convert` with the same snapshot as the main result, and is derived in `withDerivedFields`. It must **never** trigger an exchange-rate request or a DataStore write.
+  - The section is hidden when there is no result or no eligible favorite.
 - **`domain/CurrencyConverter`**: pure-JVM `BigDecimal` math. Cross rates are computed from the single MAD-based snapshot. It also parses amounts with `,` or `.` as the decimal separator.
 - **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`.
 - **`ads/`**: holds all AdMob code and is referenced only from `MainActivity`.
@@ -74,7 +79,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
   In Phase 4 the "To" dropdown arrow was already in its expanded state before any scripted input.
 
-  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean.
+  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in Phase 8 were also clean. It remains non-reproducible and must not be marked as fixed.
 
   Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.

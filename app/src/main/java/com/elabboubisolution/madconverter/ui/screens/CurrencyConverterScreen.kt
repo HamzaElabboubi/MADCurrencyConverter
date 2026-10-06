@@ -39,6 +39,7 @@ import com.elabboubisolution.madconverter.ui.components.CurrencySelectorField
 import com.elabboubisolution.madconverter.ui.components.ErrorState
 import com.elabboubisolution.madconverter.ui.components.HintMessage
 import com.elabboubisolution.madconverter.ui.components.LoadingState
+import com.elabboubisolution.madconverter.ui.components.QuickConversionsSection
 import com.elabboubisolution.madconverter.ui.components.RateInfo
 import com.elabboubisolution.madconverter.ui.components.ResultCard
 import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
@@ -64,6 +65,7 @@ fun CurrencyConverterScreen(
         onSwap = viewModel::onSwapCurrencies,
         onRetry = viewModel::onRetry,
         onToggleFavorite = viewModel::onToggleFavorite,
+        onQuickConversionSelected = viewModel::onQuickConversionSelected,
         modifier = modifier,
     )
 }
@@ -79,6 +81,7 @@ fun CurrencyConverterContent(
     onSwap: () -> Unit,
     onRetry: () -> Unit,
     onToggleFavorite: (Currency) -> Unit,
+    onQuickConversionSelected: (Currency) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var pickerSide by rememberSaveable { mutableStateOf<PickerSide?>(null) }
@@ -129,7 +132,7 @@ fun CurrencyConverterContent(
                 )
             }
 
-            ConversionSection(state = state, onRetry = onRetry)
+            ConversionSection(state = state, onRetry = onRetry, onQuickConversionSelected = onQuickConversionSelected)
         }
     }
 
@@ -148,7 +151,11 @@ fun CurrencyConverterContent(
 }
 
 @Composable
-private fun ConversionSection(state: ConverterUiState, onRetry: () -> Unit) {
+private fun ConversionSection(
+    state: ConverterUiState,
+    onRetry: () -> Unit,
+    onQuickConversionSelected: (Currency) -> Unit,
+) {
     if (!state.hasRates) {
         when {
             state.isLoading -> LoadingState()
@@ -185,6 +192,14 @@ private fun ConversionSection(state: ConverterUiState, onRetry: () -> Unit) {
                 lastUpdatedEpochSeconds = state.lastUpdatedEpochSeconds,
             )
         }
+        // Hidden without a result or without eligible favorites: never zero-value rows.
+        if (state.quickConversions.isNotEmpty()) {
+            QuickConversionsSection(
+                conversions = state.quickConversions,
+                onSelect = onQuickConversionSelected,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
     }
 }
 
@@ -194,13 +209,18 @@ private val previewConverted = ConverterUiState(
     rate = BigDecimal("0.100812"),
     result = Conversion(Currency.MAD, Currency.USD, BigDecimal("1000"), BigDecimal("100.81"), BigDecimal("0.100812")),
     lastUpdatedEpochSeconds = 1791158551L,
+    quickConversions = listOf(
+        Conversion(Currency.MAD, Currency.EUR, BigDecimal("1000"), BigDecimal("89.73"), BigDecimal("0.089729")),
+        Conversion(Currency.MAD, Currency.GBP, BigDecimal("1000"), BigDecimal("76.29"), BigDecimal("0.076291")),
+        Conversion(Currency.MAD, Currency.AED, BigDecimal("1000"), BigDecimal("368.29"), BigDecimal("0.368289")),
+    ),
 )
 
 @Composable
 private fun ContentPreview(state: ConverterUiState) {
     MADCurrencyConverterTheme {
         Surface {
-            CurrencyConverterContent(state, {}, {}, {}, {}, {}, {})
+            CurrencyConverterContent(state, {}, {}, {}, {}, {}, {}, {})
         }
     }
 }
@@ -221,17 +241,17 @@ private fun NetworkErrorPreview() =
 @Preview(showBackground = true)
 @Composable
 private fun EmptyAmountPreview() =
-    ContentPreview(previewConverted.copy(amountInput = "", result = null))
+    ContentPreview(previewConverted.copy(amountInput = "", result = null, quickConversions = emptyList()))
 
 @Preview(showBackground = true)
 @Composable
 private fun InvalidAmountPreview() =
-    ContentPreview(previewConverted.copy(amountInput = "12a", result = null, amountError = AmountError.INVALID))
+    ContentPreview(previewConverted.copy(amountInput = "12a", result = null, quickConversions = emptyList(), amountError = AmountError.INVALID))
 
 @Preview(showBackground = true)
 @Composable
 private fun MissingRatePreview() =
-    ContentPreview(previewConverted.copy(to = Currency.GBP, rate = null, result = null, missingRate = Currency.GBP))
+    ContentPreview(previewConverted.copy(to = Currency.GBP, rate = null, result = null, quickConversions = emptyList(), missingRate = Currency.GBP))
 
 @PreviewLightDark
 @Composable

@@ -14,6 +14,7 @@ import com.elabboubisolution.madconverter.domain.AmountInput
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.ConversionResult
 import com.elabboubisolution.madconverter.domain.CurrencyConverter
+import com.elabboubisolution.madconverter.domain.QuickConversions
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
@@ -39,6 +40,8 @@ enum class AmountError { INVALID, TOO_LARGE }
  * @property rate value of 1 [from] in [to], unrounded.
  * @property result conversion of a valid, non-empty amount.
  * @property favorites currencies the user starred, listed first in the currency picker.
+ * @property quickConversions [result]'s amount converted into up to 3 other favorites, from the
+ *   same rates; empty when there is no result.
  */
 data class ConverterUiState(
     val amountInput: String = "",
@@ -54,6 +57,7 @@ data class ConverterUiState(
     val result: Conversion? = null,
     val lastUpdatedEpochSeconds: Long? = null,
     val favorites: Set<Currency> = emptySet(),
+    val quickConversions: List<Conversion> = emptyList(),
 ) {
     /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
     val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
@@ -90,6 +94,9 @@ class CurrencyConverterViewModel(
     fun onToCurrencySelected(currency: Currency) = updateState {
         if (currency == it.from) it.copy(from = it.to, to = currency) else it.copy(to = currency)
     }
+
+    /** Makes a quick conversion the main one: only the target changes. */
+    fun onQuickConversionSelected(currency: Currency) = onToCurrencySelected(currency)
 
     fun onSwapCurrencies() = updateState { it.copy(from = it.to, to = it.from) }
 
@@ -149,18 +156,25 @@ internal fun withDerivedFields(state: ConverterUiState, snapshot: RateSnapshot?)
         missingRate = null,
         rate = null,
         result = null,
+        quickConversions = emptyList(),
         lastUpdatedEpochSeconds = snapshot?.lastUpdatedEpochSeconds,
     )
     if (snapshot == null) return base
 
     return when (val unit = CurrencyConverter.convert(BigDecimal.ONE, state.from, state.to, snapshot)) {
         is ConversionResult.MissingRate -> base.copy(missingRate = unit.currency)
-        is ConversionResult.Success -> base.copy(
-            rate = unit.conversion.rate,
-            result = (amount as? AmountInput.Valid)?.let {
+        is ConversionResult.Success -> {
+            val result = (amount as? AmountInput.Valid)?.let {
                 (CurrencyConverter.convert(it.value, state.from, state.to, snapshot) as? ConversionResult.Success)
                     ?.conversion
-            },
-        )
+            }
+            base.copy(
+                rate = unit.conversion.rate,
+                result = result,
+                quickConversions = result?.let {
+                    QuickConversions.convert(it.amount, state.from, state.to, state.favorites, snapshot)
+                }.orEmpty(),
+            )
+        }
     }
 }
