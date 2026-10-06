@@ -21,6 +21,7 @@ import com.elabboubisolution.madconverter.domain.CurrencyConverter
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
+import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.viewmodel.AmountError
 
@@ -36,7 +37,7 @@ fun AmountField(
     val locale = currentLocale()
     OutlinedTextField(
         value = value,
-        onValueChange = onValueChange,
+        onValueChange = { onValueChange(normalizeNumericInput(it)) },
         modifier = modifier.fillMaxWidth(),
         label = { Text(stringResource(R.string.amount_label)) },
         suffix = { Text(currency.code) },

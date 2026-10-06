@@ -47,9 +47,10 @@ import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatHistoryTimestamp
+import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
-import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import kotlinx.coroutines.launch
 
 /** Full-height sheet listing copied/shared conversions; selecting one closes it. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -142,10 +143,12 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
     val source = ConversionText.amount(entry.amount, entry.from, locale)
     val target = ConversionText.money(entry.convertedAmount, entry.to, locale)
     val time = formatHistoryTimestamp(entry.timestampMillis)
+    val conversionLabel = ltr("$source → $target")
     val description = stringResource(R.string.history_entry_description, source, target, time)
+    val clickLabel = stringResource(R.string.action_convert_again)
     ListItem(
         headlineContent = {
-            Text("$source → $target", maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(conversionLabel, maxLines = 2, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = {
             Column {
@@ -161,12 +164,15 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
         },
         trailingContent = {
             IconButton(onClick = onDelete) {
-                Icon(painterResource(R.drawable.ic_delete), stringResource(R.string.history_delete_entry))
+                Icon(
+                    painterResource(R.drawable.ic_delete),
+                    stringResource(R.string.history_delete_entry, "$source → $target"),
+                )
             }
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         modifier = Modifier
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description },
     )
 }

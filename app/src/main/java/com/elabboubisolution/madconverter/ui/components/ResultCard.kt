@@ -28,6 +28,7 @@ import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.currentLocale
+import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
 
@@ -52,12 +53,12 @@ fun ResultCard(
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
             ) {
                 Text(
-                    text = ConversionText.amount(conversion.amount, conversion.from, locale),
+                    text = ltr(ConversionText.amount(conversion.amount, conversion.from, locale)),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = ConversionText.approximate(conversion.convertedAmount, conversion.to, locale),
+                    text = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to, locale)),
                     style = MaterialTheme.typography.displaySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )

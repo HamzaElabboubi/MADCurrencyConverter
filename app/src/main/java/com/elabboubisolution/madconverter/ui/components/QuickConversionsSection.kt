@@ -33,6 +33,7 @@ import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.localizedName
+import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
 
@@ -65,11 +66,12 @@ private fun QuickConversionRow(conversion: Conversion, onClick: () -> Unit) {
     val name = currency.localizedName()
     val amount = formatDecimal(conversion.convertedAmount, currentLocale(), minDigits = currency.fractionDigits)
     val description = stringResource(R.string.quick_conversion_description, currency.code, name, amount)
+    val clickLabel = stringResource(R.string.action_make_main)
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -95,7 +97,7 @@ private fun QuickConversionRow(conversion: Conversion, onClick: () -> Unit) {
         )
         // The amount never shrinks: the name gives way first.
         Text(
-            text = stringResource(R.string.approx_amount, amount),
+            text = ltr(stringResource(R.string.approx_amount, amount)),
             style = MaterialTheme.typography.bodyLarge,
             maxLines = 1,
             modifier = Modifier.clearAndSetSemantics {},

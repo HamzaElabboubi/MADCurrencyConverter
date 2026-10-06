@@ -22,6 +22,7 @@ import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatLastUpdated
+import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
 
@@ -39,7 +40,7 @@ fun RateInfo(
     val locale = currentLocale()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = ConversionText.rate(from, to, rate, locale),
+            text = ltr(ConversionText.rate(from, to, rate, locale)),
             style = MaterialTheme.typography.titleMedium,
         )
         if (lastUpdatedEpochSeconds != null) {

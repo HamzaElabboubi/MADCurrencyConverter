@@ -47,7 +47,10 @@ import com.elabboubisolution.madconverter.domain.RealCostEstimate
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.currentLocale
-import com.elabboubisolution.madconverter.ui.format.formatTypedAmount
+import com.elabboubisolution.madconverter.ui.format.formatPercent
+import com.elabboubisolution.madconverter.ui.format.ltr
+import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
+import com.elabboubisolution.madconverter.ui.format.percentSign
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
 
@@ -91,7 +94,8 @@ fun RealCostContent(
         mutableStateOf(RealCost.PRESETS.none { it.compareTo(estimate.feePercent) == 0 })
     }
     var customText by rememberSaveable {
-        mutableStateOf(if (customMode) formatTypedAmount(estimate.feePercent, locale) else "")
+        // Plain ASCII like typed input (normalized), never locale digits the parser would reject.
+        mutableStateOf(if (customMode) estimate.feePercent.toPlainString() else "")
     }
     val customInput = if (customMode) RealCost.parseFeePercent(customText) else null
     val showBreakdown = !customMode || customInput is FeeInput.Valid
@@ -110,8 +114,10 @@ fun RealCostContent(
             modifier = Modifier.semantics { heading() },
         )
         Text(
-            text = "${ConversionText.amount(conversion.amount, conversion.from, locale)} " +
-                ConversionText.approximate(conversion.convertedAmount, conversion.to, locale),
+            text = ltr(
+                "${ConversionText.amount(conversion.amount, conversion.from, locale)} " +
+                    ConversionText.approximate(conversion.convertedAmount, conversion.to, locale),
+            ),
             style = MaterialTheme.typography.titleMedium,
         )
 
@@ -130,7 +136,7 @@ fun RealCostContent(
                         onFeeChanged(preset)
                         onFeeCommitted()
                     },
-                    label = { Text(stringResource(R.string.fee_percent, formatTypedAmount(preset, locale))) },
+                    label = { Text(formatPercent(preset, locale)) },
                 )
             }
             FilterChip(
@@ -138,7 +144,7 @@ fun RealCostContent(
                 onClick = {
                     if (!customMode) {
                         customMode = true
-                        customText = formatTypedAmount(estimate.feePercent, locale)
+                        customText = estimate.feePercent.toPlainString()
                     }
                 },
                 label = { Text(stringResource(R.string.fee_custom)) },
@@ -148,20 +154,22 @@ fun RealCostContent(
         if (customMode) {
             OutlinedTextField(
                 value = customText,
-                onValueChange = { text ->
+                onValueChange = { typed ->
+                    val text = normalizeNumericInput(typed)
                     if (text.length > 6) return@OutlinedTextField
                     customText = text
                     (RealCost.parseFeePercent(text) as? FeeInput.Valid)?.let { onFeeChanged(it.percent) }
                 },
                 label = { Text(stringResource(R.string.fee_custom_label)) },
-                suffix = { Text("%") },
+                suffix = { Text(percentSign(locale)) },
                 singleLine = true,
                 isError = customInput == FeeInput.Invalid || customInput == FeeInput.TooHigh,
                 supportingText = {
                     Text(
                         stringResource(
                             R.string.fee_custom_hint,
-                            formatTypedAmount(RealCost.MAX_FEE_PERCENT, locale),
+                            // ASCII like the field itself, which normalizes typed digits.
+                            RealCost.MAX_FEE_PERCENT.toPlainString(),
                         ),
                     )
                 },
@@ -186,20 +194,20 @@ fun RealCostContent(
 @Composable
 private fun RealCostBreakdown(estimate: RealCostEstimate) {
     val locale = currentLocale()
-    val percent = stringResource(R.string.fee_percent, formatTypedAmount(estimate.feePercent, locale))
+    val percent = ltr(formatPercent(estimate.feePercent, locale))
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BreakdownRow(
             label = stringResource(R.string.real_cost_converted),
-            value = ConversionText.money(estimate.convertedAmount, estimate.currency, locale),
+            value = ltr(ConversionText.money(estimate.convertedAmount, estimate.currency, locale)),
         )
         BreakdownRow(
             label = stringResource(R.string.real_cost_fee, percent),
-            value = ConversionText.money(estimate.fee, estimate.currency, locale),
+            value = ltr(ConversionText.money(estimate.fee, estimate.currency, locale)),
         )
         HorizontalDivider()
         BreakdownRow(
             label = stringResource(R.string.real_cost_total),
-            value = ConversionText.money(estimate.total, estimate.currency, locale),
+            value = ltr(ConversionText.money(estimate.total, estimate.currency, locale)),
             emphasized = true,
         )
     }
