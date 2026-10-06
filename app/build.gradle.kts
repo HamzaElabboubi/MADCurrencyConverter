@@ -4,6 +4,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Google's official AdMob *test* IDs: https://developers.google.com/admob/android/test-ads
+// Every build uses them for now. Production IDs will be supplied outside the repository
+// before release and must never be committed.
+val admobTestAppId = "ca-app-pub-3940256099942544~3347511713"
+val admobTestBannerAdUnitId = "ca-app-pub-3940256099942544/9214589741"
+
 android {
     namespace = "com.elabboubisolution.madconverter"
     compileSdk {
@@ -21,8 +27,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Google's official AdMob *test* App ID. Production IDs are configured in a later phase.
-        manifestPlaceholders["admobAppId"] = "ca-app-pub-3940256099942544~3347511713"
+        manifestPlaceholders["admobAppId"] = admobTestAppId
+        buildConfigField("String", "ADMOB_BANNER_AD_UNIT_ID", "\"$admobTestBannerAdUnitId\"")
     }
 
     buildTypes {
@@ -40,6 +46,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

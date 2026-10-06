@@ -12,6 +12,10 @@ How the data flows:
 - **`data/repository/CachingCurrencyRepository`**: serves the cache as current until the provider's `nextUpdateEpochSeconds`, then downloads. It never downloads more than once an hour, which the provider requires. If a download fails, it returns the cache with `isStale = true`, and the UI must then show `StaleRateBanner`.
 - **`domain/CurrencyConverter`**: pure-JVM `BigDecimal` math. Cross rates are computed from the single MAD-based snapshot. It also parses amounts with `,` or `.` as the decimal separator.
 - **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`.
+- **`ads/`**: holds all AdMob code and is referenced only from `MainActivity`.
+  - The anchored adaptive `BannerAd` is the Scaffold `bottomBar`, so the content is padded by its height and never drawn under it. It takes no space until an ad loads.
+  - `AdsInitializer` is the single place where UMP consent must be added before release.
+  - IDs come from `app/build.gradle.kts`. They are Google's test IDs, and `AdConfigTest` fails if the banner ID changes.
 - **UI**: lives in `ui/screens` and `ui/components`. Strings come in English (default) and French (`values-fr`). ExchangeRate-API's terms require the "Rates By Exchange Rate API" attribution link in `RateInfo`.
 
 **`PROJECT_SPEC.md` is the source of truth for what to build.** Read it before starting work. Key constraints from it:
