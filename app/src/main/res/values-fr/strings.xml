@@ -60,4 +60,16 @@
     <string name="history_stale_rate">Taux enregistré possiblement non à jour</string>
     <string name="history_entry_description">%1$s converti en %2$s, %3$s. Appuyez deux fois pour reconvertir ce montant aux taux actuels.</string>
     <string name="yesterday_at">Hier, %1$s</string>
+
+    <string name="real_cost_open">Coût réel</string>
+    <string name="real_cost_title">Estimation du coût réel</string>
+    <string name="real_cost_fee_presets">Frais bancaires/carte estimés</string>
+    <string name="fee_percent">%1$s %%</string>
+    <string name="fee_custom">Personnalisé</string>
+    <string name="fee_custom_label">Frais</string>
+    <string name="fee_custom_hint">De 0 à %1$s, ex. 1,5 ou 2.75</string>
+    <string name="real_cost_converted">Montant converti</string>
+    <string name="real_cost_fee">Frais bancaires/carte estimés (%1$s)</string>
+    <string name="real_cost_total">Total estimé</string>
+    <string name="real_cost_disclaimer">Votre banque ou votre émetteur de carte peut appliquer un autre taux de change ou facturer des frais supplémentaires.</string>
 </resources>

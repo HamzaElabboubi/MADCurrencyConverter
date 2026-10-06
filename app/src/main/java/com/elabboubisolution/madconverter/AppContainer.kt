@@ -5,7 +5,9 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
 import com.elabboubisolution.madconverter.data.local.DataStoreFavoritesStore
+import com.elabboubisolution.madconverter.data.local.DataStoreFeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.DataStoreHistoryStore
+import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
 import com.elabboubisolution.madconverter.data.local.HistoryStore
 import com.elabboubisolution.madconverter.data.local.RateCache
@@ -47,6 +49,9 @@ class AppContainer(context: Context) {
 
     val favoritesStore: FavoritesStore =
         DataStoreFavoritesStore(context.applicationContext.userPreferencesDataStore)
+
+    val feePreferenceStore: FeePreferenceStore =
+        DataStoreFeePreferenceStore(context.applicationContext.userPreferencesDataStore)
 
     val historyStore: HistoryStore = DataStoreHistoryStore(context.applicationContext.historyDataStore, json)
 

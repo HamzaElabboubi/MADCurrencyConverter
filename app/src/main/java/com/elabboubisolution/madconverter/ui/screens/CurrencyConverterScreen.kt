@@ -58,6 +58,7 @@ import com.elabboubisolution.madconverter.ui.components.HistorySheet
 import com.elabboubisolution.madconverter.ui.components.LoadingState
 import com.elabboubisolution.madconverter.ui.components.QuickConversionsSection
 import com.elabboubisolution.madconverter.ui.components.RateInfo
+import com.elabboubisolution.madconverter.ui.components.RealCostSheet
 import com.elabboubisolution.madconverter.ui.components.ResultCard
 import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
 import com.elabboubisolution.madconverter.ui.components.SwapButton
@@ -119,6 +120,8 @@ fun CurrencyConverterScreen(
             onHistoryEntrySelected = viewModel::onHistoryEntrySelected,
             onHistoryEntryDeleted = { viewModel.onHistoryEntryDeleted(it.id) },
             onHistoryCleared = viewModel::onHistoryCleared,
+            onFeeChanged = viewModel::onFeePercentChanged,
+            onFeeCommitted = viewModel::onFeePercentCommitted,
         )
         SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
@@ -159,9 +162,12 @@ fun CurrencyConverterContent(
     onHistoryEntrySelected: (HistoryEntry) -> Unit = {},
     onHistoryEntryDeleted: (HistoryEntry) -> Unit = {},
     onHistoryCleared: () -> Unit = {},
+    onFeeChanged: (BigDecimal) -> Unit = {},
+    onFeeCommitted: () -> Unit = {},
 ) {
     var pickerSide by rememberSaveable { mutableStateOf<PickerSide?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showRealCost by rememberSaveable { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -222,6 +228,7 @@ fun CurrencyConverterContent(
                 onQuickConversionSelected = onQuickConversionSelected,
                 onCopy = onCopy,
                 onShare = onShare,
+                onRealCost = { showRealCost = true },
             )
         }
     }
@@ -236,6 +243,19 @@ fun CurrencyConverterContent(
             onSelect = if (side == PickerSide.FROM) onFromSelected else onToSelected,
             onToggleFavorite = onToggleFavorite,
             onDismiss = { pickerSide = null },
+        )
+    }
+
+    // Only meaningful with a valid result; closes itself if the result disappears.
+    val result = state.result
+    val realCost = state.realCost
+    if (showRealCost && result != null && realCost != null) {
+        RealCostSheet(
+            conversion = result,
+            estimate = realCost,
+            onFeeChanged = onFeeChanged,
+            onFeeCommitted = onFeeCommitted,
+            onDismiss = { showRealCost = false },
         )
     }
 
@@ -257,6 +277,7 @@ private fun ConversionSection(
     onQuickConversionSelected: (Currency) -> Unit,
     onCopy: (Conversion) -> Unit,
     onShare: (Conversion) -> Unit,
+    onRealCost: () -> Unit,
 ) {
     if (!state.hasRates) {
         when {
@@ -286,6 +307,7 @@ private fun ConversionSection(
                 conversion = state.result,
                 onCopy = { onCopy(state.result) },
                 onShare = { onShare(state.result) },
+                onRealCost = onRealCost,
             )
             // Invalid or too-large amounts are explained under the field itself.
             state.amountError == null -> HintMessage(stringResource(R.string.enter_amount_hint))

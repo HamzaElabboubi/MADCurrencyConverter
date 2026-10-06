@@ -47,6 +47,15 @@ How the data flows:
 - Copy/Share text comes from `ui/format/ConversionText`, which the screen also uses, so the copied text matches the display.
 - On Android 13+ the system shows its own copy confirmation, so the "Conversion copied" Snackbar is only shown below API 33.
 
+## Real Cost (Phase 10)
+
+- Real Cost (`domain/RealCost`, `ui/components/RealCostSheet`) is an **estimate**, not an actual bank/card quotation. The UI says "Estimated bank/card fee" / "Estimated total" and shows a disclaimer.
+- The fee is the converted target amount × percentage / 100, rounded to the target currency's minor units (0 for JPY). The total is the converted amount + estimated fee. It uses exact `BigDecimal` arithmetic (never Float/Double), on the displayed converted amount, so the displayed amounts add up.
+- Presets are 0%, 1%, 2%, 3% and Custom. Custom accepts `,` or `.` with up to 2 decimals. `RealCost.MAX_FEE_PERCENT` is 20%.
+- It always reuses the existing primary conversion result (`ConverterUiState.realCost` is derived in `withDerivedFields`). It must never trigger an exchange-rate refresh or request.
+- The fee preference stays local (`FeePreferenceStore`, key `real_cost_fee_percent` in the `user_preferences` DataStore). A preset saves immediately. A custom value is saved only when the sheet closes, never while typing.
+- Real Cost does not currently take part in Copy/Share or conversion history. History still records the plain primary conversion.
+
 ## Commands
 
 Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git Bash).
@@ -89,7 +98,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
   In Phase 4 the "To" dropdown arrow was already in its expanded state before any scripted input.
 
-  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in each of Phases 8 and 9 were also clean. It remains non-reproducible and must not be marked as fixed.
+  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in each of Phases 8, 9 and 10 were also clean. It remains non-reproducible and must not be marked as fixed.
 
   Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.

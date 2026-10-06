@@ -1,6 +1,7 @@
 package com.elabboubisolution.madconverter.viewmodel
 
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
+import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.HistoryStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
@@ -15,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -37,6 +39,7 @@ class CurrencyConverterViewModelTest {
     private val snapshot = SampleRates.snapshot
     private val favorites = FakeFavoritesStore()
     private val history = FakeHistoryStore()
+    private val fees = FakeFeePreferenceStore()
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -47,7 +50,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `starts loading then shows rate once loaded`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         dispatcher.scheduler.runCurrent()
 
         assertTrue(viewModel.uiState.value.isLoading)
@@ -77,7 +80,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `amount typed while loading is converted once rates arrive`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         viewModel.onAmountChange("1000")
         assertNull(viewModel.uiState.value.result)
 
@@ -134,7 +137,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `network error is exposed and retry recovers`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
@@ -155,7 +158,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry while a request is running does not start another`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         dispatcher.scheduler.runCurrent()
 
         viewModel.onRetry()
@@ -181,7 +184,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates are flagged and still convert`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
         dispatcher.scheduler.runCurrent()
 
@@ -198,7 +201,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry from stale keeps showing rates while refreshing then clears the flag`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -339,7 +342,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates still produce quick conversions`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
@@ -354,7 +357,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `typing and tapping quick conversions never reload rates`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
         favorites.set(Currency.EUR, Currency.GBP, Currency.AED, Currency.JPY)
@@ -431,7 +434,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `offline stale copy and share work and are recorded as stale without any refresh`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -494,6 +497,146 @@ class CurrencyConverterViewModelTest {
         assertEquals(1, history.clears)
     }
 
+    // --- Real Cost ---
+
+    @Test
+    fun `no real cost without a valid amount`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        assertNull(viewModel.uiState.value.realCost)
+
+        viewModel.onAmountChange("12a")
+        assertNull(viewModel.uiState.value.realCost)
+
+        viewModel.onAmountChange("")
+        assertNull(viewModel.uiState.value.realCost)
+    }
+
+    @Test
+    fun `no real cost when the rate is missing`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel(snapshot.copy(rates = snapshot.rates - Currency.GBP))
+        viewModel.onAmountChange("100")
+
+        viewModel.onToCurrencySelected(Currency.GBP)
+
+        assertNull(viewModel.uiState.value.realCost)
+    }
+
+    @Test
+    fun `real cost applies the fee to the main result in the target currency`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onFromCurrencySelected(Currency.EUR)
+        viewModel.onToCurrencySelected(Currency.MAD)
+        viewModel.onAmountChange("250")
+
+        viewModel.onFeePercentChanged(BigDecimal("3"))
+
+        val estimate = viewModel.uiState.value.realCost!!
+        assertEquals(Currency.MAD, estimate.currency)
+        assertEquals(BigDecimal("2786.17"), estimate.convertedAmount)
+        assertEquals(BigDecimal("83.59"), estimate.fee)
+        assertEquals(BigDecimal("2869.76"), estimate.total)
+
+        viewModel.onSwapCurrencies()
+        assertEquals(Currency.EUR, viewModel.uiState.value.realCost!!.currency)
+        assertEquals(BigDecimal("23.10"), viewModel.uiState.value.realCost!!.total)
+    }
+
+    @Test
+    fun `defaults to 0 percent and loads the saved fee`() = runTest(dispatcher) {
+        assertEquals(BigDecimal.ZERO, loadedViewModel().uiState.value.feePercent)
+
+        fees.saved = BigDecimal("2.5")
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+
+        assertEquals(BigDecimal("2.5"), viewModel.uiState.value.feePercent)
+        assertEquals(BigDecimal("103.33"), viewModel.uiState.value.realCost!!.total)
+    }
+
+    @Test
+    fun `typing a custom fee does not write, committing writes once`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+
+        listOf("2", "2.7", "2.75").forEach { viewModel.onFeePercentChanged(BigDecimal(it)) }
+        dispatcher.scheduler.runCurrent()
+        assertEquals(emptyList<BigDecimal>(), fees.writes)
+        assertEquals(BigDecimal("2.75"), viewModel.uiState.value.realCost!!.feePercent)
+
+        viewModel.onFeePercentCommitted()
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf(BigDecimal("2.75")), fees.writes)
+    }
+
+    @Test
+    fun `committing an unchanged fee does not write`() = runTest(dispatcher) {
+        fees.saved = BigDecimal("3")
+        val viewModel = loadedViewModel()
+
+        viewModel.onFeePercentChanged(BigDecimal("3.00"))
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(emptyList<BigDecimal>(), fees.writes)
+    }
+
+    @Test
+    fun `out of range fees are ignored`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onFeePercentChanged(BigDecimal("2"))
+
+        viewModel.onFeePercentChanged(BigDecimal("-1"))
+        viewModel.onFeePercentChanged(BigDecimal("20.01"))
+
+        assertEquals(BigDecimal("2"), viewModel.uiState.value.feePercent)
+    }
+
+    @Test
+    fun `stale cached rates still give a real cost estimate`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onFeePercentChanged(BigDecimal("3"))
+
+        assertTrue(viewModel.uiState.value.isStale)
+        assertEquals(BigDecimal("103.83"), viewModel.uiState.value.realCost!!.total)
+    }
+
+    @Test
+    fun `real cost never reloads rates nor records history`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        // Opening, editing and closing the sheet only goes through these two calls.
+        listOf("0", "1", "2", "3", "1.5", "4.25").forEach { viewModel.onFeePercentChanged(BigDecimal(it)) }
+        viewModel.onFeePercentCommitted()
+        viewModel.onFeePercentChanged(BigDecimal("2"))
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(1, repository.calls)
+        assertEquals(emptyList<Any>(), history.recorded)
+    }
+
+    @Test
+    fun `copy is unchanged by the real cost fee`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+        viewModel.onFeePercentChanged(BigDecimal("3"))
+
+        viewModel.onResultCopied()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(BigDecimal("100.81"), history.recorded.single().first.convertedAmount)
+    }
+
     private fun historyEntry(
         from: Currency = Currency.MAD,
         to: Currency = Currency.USD,
@@ -504,10 +647,21 @@ class CurrencyConverterViewModelTest {
 
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
         repository.complete(RatesResult.Available(rates, isStale = false))
         dispatcher.scheduler.runCurrent()
         return viewModel
+    }
+
+    private class FakeFeePreferenceStore : FeePreferenceStore {
+        var saved: BigDecimal = BigDecimal.ZERO
+        val writes = mutableListOf<BigDecimal>()
+        override val feePercent get() = flowOf(saved)
+
+        override suspend fun setFeePercent(percent: BigDecimal) {
+            writes += percent
+            saved = percent
+        }
     }
 
     private class FakeHistoryStore : HistoryStore {

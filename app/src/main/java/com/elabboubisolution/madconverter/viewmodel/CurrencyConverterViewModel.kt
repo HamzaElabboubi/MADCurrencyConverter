@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.elabboubisolution.madconverter.MadConverterApplication
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
+import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.HistoryStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
@@ -16,6 +17,8 @@ import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.ConversionResult
 import com.elabboubisolution.madconverter.domain.CurrencyConverter
 import com.elabboubisolution.madconverter.domain.QuickConversions
+import com.elabboubisolution.madconverter.domain.RealCost
+import com.elabboubisolution.madconverter.domain.RealCostEstimate
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
@@ -24,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -45,6 +49,8 @@ enum class AmountError { INVALID, TOO_LARGE }
  * @property quickConversions [result]'s amount converted into up to 3 other favorites, from the
  *   same rates; empty when there is no result.
  * @property history copied/shared conversions, newest first (historical values, not current).
+ * @property feePercent Real Cost fee the user chose (0–[RealCost.MAX_FEE_PERCENT]).
+ * @property realCost [result] with [feePercent] applied; null when there is no result.
  */
 data class ConverterUiState(
     val amountInput: String = "",
@@ -62,6 +68,8 @@ data class ConverterUiState(
     val favorites: Set<Currency> = emptySet(),
     val quickConversions: List<Conversion> = emptyList(),
     val history: List<HistoryEntry> = emptyList(),
+    val feePercent: BigDecimal = BigDecimal.ZERO,
+    val realCost: RealCostEstimate? = null,
 ) {
     /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
     val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
@@ -71,18 +79,27 @@ class CurrencyConverterViewModel(
     private val repository: CurrencyRepository,
     private val favoritesStore: FavoritesStore,
     private val historyStore: HistoryStore,
+    private val feePreferenceStore: FeePreferenceStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
     val uiState: StateFlow<ConverterUiState> = _uiState.asStateFlow()
 
     private var snapshot: RateSnapshot? = null
+
+    /** Last fee written to storage, to skip redundant writes. */
+    private var persistedFeePercent: BigDecimal? = null
     private var loadJob: Job? = null
 
     init {
         loadRates()
         viewModelScope.launch {
             favoritesStore.favorites.collect { favorites -> updateState { it.copy(favorites = favorites) } }
+        }
+        viewModelScope.launch {
+            val saved = feePreferenceStore.feePercent.first()
+            persistedFeePercent = saved
+            updateState { it.copy(feePercent = saved) }
         }
         viewModelScope.launch {
             historyStore.entries.collect { history -> updateState { it.copy(history = history) } }
@@ -125,6 +142,23 @@ class CurrencyConverterViewModel(
 
     fun onHistoryCleared() {
         viewModelScope.launch { historyStore.clear() }
+    }
+
+    /**
+     * Updates the Real Cost estimate immediately without saving, so typing a custom percentage
+     * never writes to storage. Values outside 0–[RealCost.MAX_FEE_PERCENT] are ignored.
+     */
+    fun onFeePercentChanged(percent: BigDecimal) {
+        if (percent.signum() < 0 || percent > RealCost.MAX_FEE_PERCENT) return
+        updateState { it.copy(feePercent = percent) }
+    }
+
+    /** Saves the current fee (preset chosen or Real Cost closed); no-op if unchanged. */
+    fun onFeePercentCommitted() {
+        val percent = _uiState.value.feePercent
+        if (persistedFeePercent?.compareTo(percent) == 0) return
+        persistedFeePercent = percent
+        viewModelScope.launch { feePreferenceStore.setFeePercent(percent) }
     }
 
     private fun recordCurrentConversion() {
@@ -177,6 +211,7 @@ class CurrencyConverterViewModel(
                     app.container.currencyRepository,
                     app.container.favoritesStore,
                     app.container.historyStore,
+                    app.container.feePreferenceStore,
                 )
             }
         }
@@ -196,6 +231,7 @@ internal fun withDerivedFields(state: ConverterUiState, snapshot: RateSnapshot?)
         rate = null,
         result = null,
         quickConversions = emptyList(),
+        realCost = null,
         lastUpdatedEpochSeconds = snapshot?.lastUpdatedEpochSeconds,
     )
     if (snapshot == null) return base
@@ -213,6 +249,7 @@ internal fun withDerivedFields(state: ConverterUiState, snapshot: RateSnapshot?)
                 quickConversions = result?.let {
                     QuickConversions.convert(it.amount, state.from, state.to, state.favorites, snapshot)
                 }.orEmpty(),
+                realCost = result?.let { RealCost.estimate(it, state.feePercent) },
             )
         }
     }

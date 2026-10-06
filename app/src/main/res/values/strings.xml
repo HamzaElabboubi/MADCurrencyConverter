@@ -64,4 +64,16 @@
     <string name="history_stale_rate">Saved rate may not have been current</string>
     <string name="history_entry_description">%1$s converted to %2$s, %3$s. Double tap to convert this amount again with current rates.</string>
     <string name="yesterday_at">Yesterday, %1$s</string>
+
+    <string name="real_cost_open">Real cost</string>
+    <string name="real_cost_title">Real cost estimate</string>
+    <string name="real_cost_fee_presets">Estimated bank/card fee</string>
+    <string name="fee_percent">%1$s%%</string>
+    <string name="fee_custom">Custom</string>
+    <string name="fee_custom_label">Fee</string>
+    <string name="fee_custom_hint">From 0 to %1$s, e.g. 1.5 or 2,75</string>
+    <string name="real_cost_converted">Converted amount</string>
+    <string name="real_cost_fee">Estimated bank/card fee (%1$s)</string>
+    <string name="real_cost_total">Estimated total</string>
+    <string name="real_cost_disclaimer">Your bank or card provider may use a different exchange rate or charge additional fees.</string>
 </resources>
