@@ -61,3 +61,13 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
 - Single-activity Compose app: `MainActivity` calls `enableEdgeToEdge()` and wraps content in `MADCurrencyConverterTheme` + `Scaffold`; pass `innerPadding` to content.
 - `ui/theme/Theme.kt` uses dynamic color on Android 12+ and falls back to the static `Color.kt` schemes otherwise, so custom palette changes in `Color.kt` won't be visible on 12+ devices unless `dynamicColor = false`.
+
+## Known issues
+
+- **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:
+  - the amount unexpectedly became `1001000` after typing `1000`;
+  - the currencies unexpectedly switched to USD → MAD.
+
+  In Phase 4 the "To" dropdown arrow was already in its expanded state before any scripted input.
+
+  Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with `CurrencySelector` (`ExposedDropdownMenuBox` expanded state) and the swap logic in `CurrencyConverterViewModel`.
