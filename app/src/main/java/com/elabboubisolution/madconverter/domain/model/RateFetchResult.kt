@@ -20,6 +20,6 @@ sealed interface RateFetchError {
     /** The body could not be parsed or contains inconsistent values. */
     data object InvalidResponse : RateFetchError
 
-    /** The response is valid but lacks rates for some supported currencies. */
+    /** The response is valid but has no rate for any supported currency other than the base. */
     data class RateUnavailable(val missing: List<Currency>) : RateFetchError
 }

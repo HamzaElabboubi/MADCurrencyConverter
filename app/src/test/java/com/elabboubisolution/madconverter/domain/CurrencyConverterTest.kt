@@ -1,29 +1,18 @@
 package com.elabboubisolution.madconverter.domain
 
 import com.elabboubisolution.madconverter.domain.model.Currency
-import com.elabboubisolution.madconverter.domain.model.RateSnapshot
+import com.elabboubisolution.madconverter.testing.SampleRates
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.math.BigDecimal
 
 /**
  * Expected values were computed independently with Python's `decimal` module
- * (34 significant digits, ROUND_HALF_UP to 2 decimals) from the rates below,
- * taken from a real open.er-api.com response on 2026-10-05.
+ * (34 significant digits, ROUND_HALF_UP to the target's minor units) from [SampleRates].
  */
 class CurrencyConverterTest {
 
-    private val snapshot = RateSnapshot(
-        base = Currency.MAD,
-        rates = mapOf(
-            Currency.MAD to BigDecimal("1"),
-            Currency.USD to BigDecimal("0.100812"),
-            Currency.EUR to BigDecimal("0.089729"),
-            Currency.GBP to BigDecimal("0.076291"),
-        ),
-        lastUpdatedEpochSeconds = 1791158551L,
-        nextUpdateEpochSeconds = 1791246061L,
-    )
+    private val snapshot = SampleRates.snapshot
 
     // --- Conversions ---
 
@@ -100,6 +89,45 @@ class CurrencyConverterTest {
         assertEquals(AmountInput.Valid(BigDecimal("999999999999.99")), CurrencyConverter.parseAmount("999999999999.99"))
         assertEquals(AmountInput.TooLarge, CurrencyConverter.parseAmount("1000000000000"))
         assertEquals(AmountInput.TooLarge, CurrencyConverter.parseAmount("99999999999999999999999"))
+    }
+
+    // --- Currencies added in V1.5 ---
+
+    @Test
+    fun `MAD to JPY rounds to whole yen`() {
+        // 1000 x 15.839832 = 15839.832 -> 15840 (JPY has no minor unit)
+        val conversion = convert("1000", Currency.MAD, Currency.JPY)
+
+        assertEquals(BigDecimal("15840"), conversion.convertedAmount)
+        assertEquals(0, conversion.convertedAmount.scale())
+    }
+
+    @Test
+    fun `JPY to MAD`() {
+        assertEquals(BigDecimal("63.13"), convert("1000", Currency.JPY, Currency.MAD).convertedAmount)
+    }
+
+    @Test
+    fun `cross rates between new non base currencies`() {
+        val cadToAed = convert("500", Currency.CAD, Currency.AED)
+        assertEquals(BigDecimal("1289.15"), cadToAed.convertedAmount)
+        assertNumericEquals("2.578296299407737220145335405552989", cadToAed.rate)
+
+        assertEquals(BigDecimal("5491.95"), convert("100", Currency.EUR, Currency.TRY).convertedAmount)
+        assertEquals(BigDecimal("55.37"), convert("250", Currency.SAR, Currency.CHF).convertedAmount)
+        assertEquals(BigDecimal("1133.00"), convert("10000", Currency.CNY, Currency.GBP).convertedAmount)
+        assertEquals(BigDecimal("7.86"), convert("1234.5", Currency.JPY, Currency.USD).convertedAmount)
+    }
+
+    @Test
+    fun `every supported pair converts with the sample rates`() {
+        for (from in Currency.entries) {
+            for (to in Currency.entries) {
+                val result = CurrencyConverter.convert(BigDecimal("100"), from, to, snapshot)
+                check(result is ConversionResult.Success) { "$from -> $to: $result" }
+                assertEquals("$from -> $to scale", to.fractionDigits, result.conversion.convertedAmount.scale())
+            }
+        }
     }
 
     // --- Missing rate ---

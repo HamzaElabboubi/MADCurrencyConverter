@@ -4,10 +4,6 @@
     <string name="to_label">Vers</string>
     <string name="swap_currencies">Inverser les devises</string>
 
-    <string name="currency_mad">Dirham marocain</string>
-    <string name="currency_usd">Dollar américain</string>
-    <string name="currency_eur">Euro</string>
-    <string name="currency_gbp">Livre sterling</string>
 
     <string name="enter_amount_hint">Saisissez un montant à convertir</string>
     <string name="error_invalid_amount">Saisissez un nombre valide, ex. 1250,50 ou 1250.50</string>
@@ -27,4 +23,17 @@
     <string name="error_missing_rate">Aucun taux de change disponible pour %1$s.</string>
     <string name="stale_title">Taux possiblement non à jour</string>
     <string name="stale_message">Affichage des derniers taux enregistrés.</string>
+
+    <string name="choose_from_currency">Convertir depuis</string>
+    <string name="choose_to_currency">Convertir vers</string>
+    <string name="change_currency">%1$s : %2$s, %3$s. Appuyez deux fois pour changer.</string>
+    <string name="search_currency_hint">Rechercher par code ou nom</string>
+    <string name="clear_search">Effacer la recherche</string>
+    <string name="favorites_header">Favoris</string>
+    <string name="all_currencies_header">Toutes les devises</string>
+    <string name="other_currencies_header">Autres devises</string>
+    <string name="no_currency_found">Aucune devise ne correspond à « %1$s »</string>
+    <string name="add_favorite">Ajouter %1$s aux favoris</string>
+    <string name="remove_favorite">Retirer %1$s des favoris</string>
+    <string name="selected_currency">Sélectionnée</string>
 </resources>

@@ -34,6 +34,8 @@ interface CurrencyRepository {
  *
  * Cached rates count as current until the provider's announced next update
  * ([RateSnapshot.nextUpdateEpochSeconds], or [MAX_AGE_WITHOUT_SCHEDULE_MILLIS] if unknown).
+ * A cache lacking some supported currencies (e.g. saved before currencies were added) is also
+ * refreshed, without being reported as stale if that download fails.
  * Downloads are never closer than [MIN_FETCH_INTERVAL_MILLIS] apart, as the provider requires.
  */
 class CachingCurrencyRepository(
@@ -45,7 +47,8 @@ class CachingCurrencyRepository(
     override suspend fun getRates(): RatesResult {
         val cached = cache.read()
         val now = clock()
-        if (cached != null && !cached.isRefreshDue(now)) {
+        val scheduleDue = cached?.isRefreshDue(now) ?: true
+        if (cached != null && !scheduleDue && !cached.needsMissingCurrencies(now)) {
             return RatesResult.Available(cached.snapshot, isStale = false)
         }
 
@@ -56,7 +59,11 @@ class CachingCurrencyRepository(
             }
             is RateFetchResult.Failure ->
                 if (cached != null) {
-                    RatesResult.Available(cached.snapshot, isStale = true, refreshError = result.error)
+                    RatesResult.Available(
+                        snapshot = cached.snapshot,
+                        isStale = scheduleDue,
+                        refreshError = result.error.takeIf { scheduleDue },
+                    )
                 } else {
                     RatesResult.Unavailable(result.error)
                 }
@@ -75,11 +82,20 @@ internal fun CachedSnapshot.isRefreshDue(nowMillis: Long): Boolean {
     val sinceFetch = nowMillis - fetchedAtEpochMillis
     // A clock set backwards makes the fetch time unreliable: refresh.
     if (sinceFetch < 0) return true
-    if (sinceFetch < CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS) return false
+    if (!isPastMinFetchInterval(nowMillis)) return false
     val nextUpdateMillis = snapshot.nextUpdateEpochSeconds?.times(1000)
     return if (nextUpdateMillis != null) {
         nowMillis >= nextUpdateMillis
     } else {
         sinceFetch >= CachingCurrencyRepository.MAX_AGE_WITHOUT_SCHEDULE_MILLIS
     }
+}
+
+/** True when supported currencies are missing from the cache and a download is allowed again. */
+internal fun CachedSnapshot.needsMissingCurrencies(nowMillis: Long): Boolean =
+    !snapshot.rates.keys.containsAll(Currency.entries) && isPastMinFetchInterval(nowMillis)
+
+private fun CachedSnapshot.isPastMinFetchInterval(nowMillis: Long): Boolean {
+    val sinceFetch = nowMillis - fetchedAtEpochMillis
+    return sinceFetch < 0 || sinceFetch >= CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS
 }

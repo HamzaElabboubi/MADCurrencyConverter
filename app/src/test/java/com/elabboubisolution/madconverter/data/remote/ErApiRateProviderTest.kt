@@ -3,6 +3,7 @@ package com.elabboubisolution.madconverter.data.remote
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateFetchResult
+import com.elabboubisolution.madconverter.testing.SampleRates
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import mockwebserver3.MockResponse
@@ -45,6 +46,8 @@ class ErApiRateProviderTest {
         assertEquals(BigDecimal("0.100812"), snapshot.rates[Currency.USD])
         assertEquals(BigDecimal("0.089729"), snapshot.rates[Currency.EUR])
         assertEquals(BigDecimal("0.076291"), snapshot.rates[Currency.GBP])
+        assertEquals(BigDecimal("15.839832"), snapshot.rates[Currency.JPY])
+        assertEquals("all supported currencies, unsupported ones ignored", Currency.entries.toSet(), snapshot.rates.keys)
         assertEquals(1791158551L, snapshot.lastUpdatedEpochSeconds)
         assertEquals(1791246061L, snapshot.nextUpdateEpochSeconds)
         assertEquals("/v6/latest/MAD", server.takeRequest().target)
@@ -94,21 +97,32 @@ class ErApiRateProviderTest {
 
     @Test
     fun `non numeric or non positive rate maps to InvalidResponse`() = runTest {
-        server.enqueue(json(200, successBody(usd = "\"abc\"")))
+        server.enqueue(json(200, successBody(rates = withUsd("\"abc\""))))
         assertFailure(RateFetchError.InvalidResponse)
 
-        server.enqueue(json(200, successBody(usd = "0")))
+        server.enqueue(json(200, successBody(rates = withUsd("0"))))
         assertFailure(RateFetchError.InvalidResponse)
 
-        server.enqueue(json(200, successBody(usd = "-0.1")))
+        server.enqueue(json(200, successBody(rates = withUsd("-0.1"))))
         assertFailure(RateFetchError.InvalidResponse)
     }
 
     @Test
-    fun `missing supported currency maps to RateUnavailable`() = runTest {
-        server.enqueue(json(200, successBody(gbp = null)))
+    fun `currency missing from the response is left out without failing the others`() = runTest {
+        server.enqueue(json(200, successBody(rates = SampleRates.ratesJson(Currency.GBP, Currency.JPY))))
 
-        assertFailure(RateFetchError.RateUnavailable(listOf(Currency.GBP)))
+        val snapshot = (provider.fetchLatestRates(Currency.MAD) as RateFetchResult.Success).snapshot
+
+        assertEquals(Currency.entries.toSet() - Currency.GBP - Currency.JPY, snapshot.rates.keys)
+        assertEquals(BigDecimal("0.100812"), snapshot.rates[Currency.USD])
+    }
+
+    @Test
+    fun `response without any supported currency besides the base maps to RateUnavailable`() = runTest {
+        val onlyBase = SampleRates.ratesJson(*(Currency.entries - Currency.MAD).toTypedArray())
+        server.enqueue(json(200, successBody(rates = onlyBase)))
+
+        assertFailure(RateFetchError.RateUnavailable(Currency.entries - Currency.MAD))
     }
 
     @Test
@@ -155,31 +169,20 @@ class ErApiRateProviderTest {
         .body(body)
         .build()
 
-    /** Trimmed copy of a real open.er-api.com response (2026-10-05). Pass null to omit a rate. */
-    private fun successBody(
-        base: String = "MAD",
-        usd: String? = "0.100812",
-        gbp: String? = "0.076291",
-    ): String {
-        val rates = listOfNotNull(
-            "\"MAD\":1",
-            "\"AED\":0.370231",
-            usd?.let { "\"USD\":$it" },
-            "\"EUR\":0.089729",
-            gbp?.let { "\"GBP\":$it" },
-        ).joinToString(",")
-        return """
-            {
-              "result":"success",
-              "provider":"https://www.exchangerate-api.com",
-              "time_last_update_unix":1791158551,
-              "time_last_update_utc":"Mon, 05 Oct 2026 00:02:31 +0000",
-              "time_next_update_unix":1791246061,
-              "time_next_update_utc":"Tue, 06 Oct 2026 00:21:01 +0000",
-              "time_eol_unix":0,
-              "base_code":"$base",
-              "rates":{$rates}
-            }
-        """.trimIndent()
-    }
+    /** Shape of a real open.er-api.com response; [rates] defaults to [SampleRates]. */
+    private fun successBody(base: String = "MAD", rates: String = SampleRates.ratesJson()): String = """
+        {
+          "result":"success",
+          "provider":"https://www.exchangerate-api.com",
+          "time_last_update_unix":1791158551,
+          "time_last_update_utc":"Mon, 05 Oct 2026 00:02:31 +0000",
+          "time_next_update_unix":1791246061,
+          "time_next_update_utc":"Tue, 06 Oct 2026 00:21:01 +0000",
+          "time_eol_unix":0,
+          "base_code":"$base",
+          "rates":$rates
+        }
+    """.trimIndent()
+
+    private fun withUsd(value: String) = SampleRates.ratesJson(override = mapOf(Currency.USD to value))
 }

@@ -4,12 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-"MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. Phases 1–5 of the spec are done: API, conversion logic, UI and offline cache. AdMob, polish and the README are still to come.
+"MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. V1 (spec phases 1–6) is done: API, conversion logic, UI, offline cache and the AdMob test banner. V1.5 is in progress. Its Phase 7 adds 11 currencies, a searchable picker and favorites.
 
 How the data flows:
 - **`data/remote`**: `ErApiRateProvider` calls ExchangeRate-API's open endpoint (`open.er-api.com/v6/latest/MAD`, no key) through Retrofit and turns every failure into a typed `RateFetchError`. Errors arrive as HTTP 200 with `"result":"error"`, so check the body as well as the status. Rates are parsed straight to `BigDecimal`.
 - **`data/local/RateCache`**: stores the last successful snapshot in DataStore as JSON, with rates kept as strings. Corrupt data reads as an empty cache.
 - **`data/repository/CachingCurrencyRepository`**: serves the cache as current until the provider's `nextUpdateEpochSeconds`, then downloads. It never downloads more than once an hour, which the provider requires. If a download fails, it returns the cache with `isStale = true`, and the UI must then show `StaleRateBanner`.
+- **`domain/model/Currency`**: the enum order is the picker order. Names and minor-unit digits come from the platform's ISO/CLDR data via `java.util.Currency`, so there are no string resources for currency names. Only the short `symbol` is curated. To add a currency, add an entry, and only if ExchangeRate-API publishes it.
+- **`domain/CurrencySearch`**: pure-JVM picker search over code, localized name and English name. It ignores case and accents and returns favorites first.
+- **`data/local/FavoritesStore`**: favorites live in a separate DataStore (`user_preferences`). The defaults are MAD/EUR/USD until the user changes them.
+- **Partial rate sets**: the provider omits currencies missing from a response instead of failing. The repository refreshes a cache that lacks supported currencies, still at most once an hour, without marking it stale.
 - **`domain/CurrencyConverter`**: pure-JVM `BigDecimal` math. Cross rates are computed from the single MAD-based snapshot. It also parses amounts with `,` or `.` as the decimal separator.
 - **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`.
 - **`ads/`**: holds all AdMob code and is referenced only from `MainActivity`.
@@ -70,4 +74,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
   In Phase 4 the "To" dropdown arrow was already in its expanded state before any scripted input.
 
-  Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with `CurrencySelector` (`ExposedDropdownMenuBox` expanded state) and the swap logic in `CurrencyConverterViewModel`.
+  In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean.
+
+  Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
+- **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.

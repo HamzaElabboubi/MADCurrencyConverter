@@ -5,12 +5,7 @@
     <string name="from_label">From</string>
     <string name="to_label">To</string>
     <string name="swap_currencies">Swap currencies</string>
-    <string name="currency_option" translatable="false">%1$s — %2$s</string>
 
-    <string name="currency_mad">Moroccan dirham</string>
-    <string name="currency_usd">US dollar</string>
-    <string name="currency_eur">Euro</string>
-    <string name="currency_gbp">British pound</string>
 
     <string name="enter_amount_hint">Enter an amount to convert</string>
     <string name="error_invalid_amount">Enter a valid number, e.g. 1250.50 or 1250,50</string>
@@ -34,4 +29,17 @@
     <string name="error_missing_rate">No exchange rate is available for %1$s.</string>
     <string name="stale_title">Rates may not be up to date</string>
     <string name="stale_message">Showing the last saved rates.</string>
+
+    <string name="choose_from_currency">Convert from</string>
+    <string name="choose_to_currency">Convert to</string>
+    <string name="change_currency">%1$s: %2$s, %3$s. Double tap to change.</string>
+    <string name="search_currency_hint">Search by code or name</string>
+    <string name="clear_search">Clear search</string>
+    <string name="favorites_header">Favorites</string>
+    <string name="all_currencies_header">All currencies</string>
+    <string name="other_currencies_header">Other currencies</string>
+    <string name="no_currency_found">No currency matches “%1$s”</string>
+    <string name="add_favorite">Add %1$s to favorites</string>
+    <string name="remove_favorite">Remove %1$s from favorites</string>
+    <string name="selected_currency">Selected</string>
 </resources>

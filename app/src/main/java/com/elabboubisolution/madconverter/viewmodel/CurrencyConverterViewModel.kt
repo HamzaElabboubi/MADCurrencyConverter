@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.elabboubisolution.madconverter.MadConverterApplication
+import com.elabboubisolution.madconverter.data.local.FavoritesStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.AmountInput
@@ -37,6 +38,7 @@ enum class AmountError { INVALID, TOO_LARGE }
  * @property missingRate a selected currency the loaded rates do not cover.
  * @property rate value of 1 [from] in [to], unrounded.
  * @property result conversion of a valid, non-empty amount.
+ * @property favorites currencies the user starred, listed first in the currency picker.
  */
 data class ConverterUiState(
     val amountInput: String = "",
@@ -51,6 +53,7 @@ data class ConverterUiState(
     val rate: BigDecimal? = null,
     val result: Conversion? = null,
     val lastUpdatedEpochSeconds: Long? = null,
+    val favorites: Set<Currency> = emptySet(),
 ) {
     /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
     val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
@@ -58,6 +61,7 @@ data class ConverterUiState(
 
 class CurrencyConverterViewModel(
     private val repository: CurrencyRepository,
+    private val favoritesStore: FavoritesStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
@@ -68,6 +72,9 @@ class CurrencyConverterViewModel(
 
     init {
         loadRates()
+        viewModelScope.launch {
+            favoritesStore.favorites.collect { favorites -> updateState { it.copy(favorites = favorites) } }
+        }
     }
 
     fun onAmountChange(input: String) {
@@ -87,6 +94,11 @@ class CurrencyConverterViewModel(
     fun onSwapCurrencies() = updateState { it.copy(from = it.to, to = it.from) }
 
     fun onRetry() = loadRates()
+
+    fun onToggleFavorite(currency: Currency) {
+        val isFavorite = currency in _uiState.value.favorites
+        viewModelScope.launch { favoritesStore.setFavorite(currency, !isFavorite) }
+    }
 
     private fun loadRates() {
         if (loadJob?.isActive == true) return
@@ -119,7 +131,7 @@ class CurrencyConverterViewModel(
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as MadConverterApplication
-                CurrencyConverterViewModel(app.container.currencyRepository)
+                CurrencyConverterViewModel(app.container.currencyRepository, app.container.favoritesStore)
             }
         }
     }

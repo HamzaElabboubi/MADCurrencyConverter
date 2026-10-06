@@ -150,6 +150,44 @@ class CachingCurrencyRepositoryTest {
         assertEquals(1, provider.calls)
     }
 
+    @Test
+    fun `cache saved before currencies were added is refreshed even before the next update`() = runTest {
+        val oldFourCurrencies = SAMPLE_SNAPSHOT.copy(
+            rates = SAMPLE_SNAPSHOT.rates.filterKeys { it in setOf(Currency.MAD, Currency.USD, Currency.EUR, Currency.GBP) },
+        )
+        cache.write(oldFourCurrencies, FETCHED_AT)
+        now = FETCHED_AT + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+
+        val result = repository.getRates()
+
+        assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), result)
+        assertEquals(1, provider.calls)
+    }
+
+    @Test
+    fun `incomplete cache still respects the one hour minimum between downloads`() = runTest {
+        val incomplete = SAMPLE_SNAPSHOT.copy(rates = SAMPLE_SNAPSHOT.rates - Currency.JPY)
+        cache.write(incomplete, FETCHED_AT)
+        now = FETCHED_AT + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS - 1
+
+        assertEquals(RatesResult.Available(incomplete, isStale = false), repository.getRates())
+        assertEquals(0, provider.calls)
+    }
+
+    @Test
+    fun `failed refresh of an incomplete but current cache is not reported as stale`() = runTest {
+        val incomplete = SAMPLE_SNAPSHOT.copy(rates = SAMPLE_SNAPSHOT.rates - Currency.JPY)
+        cache.write(incomplete, FETCHED_AT)
+        now = nextUpdateMillis - 1
+        provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
+
+        val result = repository.getRates()
+
+        assertEquals(RatesResult.Available(incomplete, isStale = false, refreshError = null), result)
+        assertEquals(1, provider.calls)
+    }
+
     private class FakeProvider : RateProvider {
         var next: RateFetchResult? = null
         var calls = 0

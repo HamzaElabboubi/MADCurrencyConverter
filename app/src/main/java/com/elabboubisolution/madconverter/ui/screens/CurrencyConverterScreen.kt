@@ -16,6 +16,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -31,7 +34,8 @@ import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.ui.components.AmountField
-import com.elabboubisolution.madconverter.ui.components.CurrencySelector
+import com.elabboubisolution.madconverter.ui.components.CurrencyPickerSheet
+import com.elabboubisolution.madconverter.ui.components.CurrencySelectorField
 import com.elabboubisolution.madconverter.ui.components.ErrorState
 import com.elabboubisolution.madconverter.ui.components.HintMessage
 import com.elabboubisolution.madconverter.ui.components.LoadingState
@@ -59,9 +63,12 @@ fun CurrencyConverterScreen(
         onToSelected = viewModel::onToCurrencySelected,
         onSwap = viewModel::onSwapCurrencies,
         onRetry = viewModel::onRetry,
+        onToggleFavorite = viewModel::onToggleFavorite,
         modifier = modifier,
     )
 }
+
+private enum class PickerSide { FROM, TO }
 
 @Composable
 fun CurrencyConverterContent(
@@ -71,8 +78,11 @@ fun CurrencyConverterContent(
     onToSelected: (Currency) -> Unit,
     onSwap: () -> Unit,
     onRetry: () -> Unit,
+    onToggleFavorite: (Currency) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var pickerSide by rememberSaveable { mutableStateOf<PickerSide?>(null) }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -104,23 +114,36 @@ fun CurrencyConverterContent(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                CurrencySelector(
+                CurrencySelectorField(
                     label = stringResource(R.string.from_label),
-                    selected = state.from,
-                    onSelected = onFromSelected,
+                    currency = state.from,
+                    onClick = { pickerSide = PickerSide.FROM },
                     modifier = Modifier.weight(1f),
                 )
                 SwapButton(onClick = onSwap)
-                CurrencySelector(
+                CurrencySelectorField(
                     label = stringResource(R.string.to_label),
-                    selected = state.to,
-                    onSelected = onToSelected,
+                    currency = state.to,
+                    onClick = { pickerSide = PickerSide.TO },
                     modifier = Modifier.weight(1f),
                 )
             }
 
             ConversionSection(state = state, onRetry = onRetry)
         }
+    }
+
+    pickerSide?.let { side ->
+        CurrencyPickerSheet(
+            title = stringResource(
+                if (side == PickerSide.FROM) R.string.choose_from_currency else R.string.choose_to_currency,
+            ),
+            selected = if (side == PickerSide.FROM) state.from else state.to,
+            favorites = state.favorites,
+            onSelect = if (side == PickerSide.FROM) onFromSelected else onToSelected,
+            onToggleFavorite = onToggleFavorite,
+            onDismiss = { pickerSide = null },
+        )
     }
 }
 
@@ -177,7 +200,7 @@ private val previewConverted = ConverterUiState(
 private fun ContentPreview(state: ConverterUiState) {
     MADCurrencyConverterTheme {
         Surface {
-            CurrencyConverterContent(state, {}, {}, {}, {}, {})
+            CurrencyConverterContent(state, {}, {}, {}, {}, {}, {})
         }
     }
 }

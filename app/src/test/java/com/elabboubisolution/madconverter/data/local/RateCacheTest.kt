@@ -5,7 +5,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import com.elabboubisolution.madconverter.domain.model.Currency
-import com.elabboubisolution.madconverter.domain.model.RateSnapshot
+import com.elabboubisolution.madconverter.testing.SampleRates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,7 +20,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
-import java.math.BigDecimal
 
 class RateCacheTest {
 
@@ -96,17 +95,7 @@ class RateCacheTest {
     }
 
     companion object {
-        val SAMPLE_SNAPSHOT = RateSnapshot(
-            base = Currency.MAD,
-            rates = mapOf(
-                Currency.MAD to BigDecimal("1"),
-                Currency.USD to BigDecimal("0.100812"),
-                Currency.EUR to BigDecimal("0.089729"),
-                Currency.GBP to BigDecimal("0.076291"),
-            ),
-            lastUpdatedEpochSeconds = 1_791_158_551L,
-            nextUpdateEpochSeconds = 1_791_246_061L,
-        )
+        val SAMPLE_SNAPSHOT = SampleRates.snapshot
 
         fun testDataStore(scope: CoroutineScope, file: File): DataStore<Preferences> =
             PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })

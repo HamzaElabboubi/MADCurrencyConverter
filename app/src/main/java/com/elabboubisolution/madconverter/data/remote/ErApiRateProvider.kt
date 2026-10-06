@@ -68,7 +68,9 @@ internal fun LatestRatesDto.toRateFetchResult(
         parsed[currency] = raw.toPositiveDecimalOrNull()
             ?: return RateFetchResult.Failure(RateFetchError.InvalidResponse)
     }
-    if (missing.isNotEmpty()) {
+    // A currency the provider stops publishing must not block the others: it is left out of the
+    // snapshot and reported per pair at conversion time. Only an answer with none is unusable.
+    if (parsed.keys.none { it != requestedBase }) {
         return RateFetchResult.Failure(RateFetchError.RateUnavailable(missing))
     }
 

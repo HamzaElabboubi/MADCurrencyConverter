@@ -1,7 +1,6 @@
 package com.elabboubisolution.madconverter.ui.format
 
 import android.text.format.DateUtils
-import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLocale
@@ -35,13 +34,9 @@ fun formatTypedAmount(value: BigDecimal, locale: Locale): String {
 @Composable
 fun currentLocale(): Locale = LocalLocale.current.platformLocale
 
-@StringRes
-fun Currency.displayNameRes(): Int = when (this) {
-    Currency.MAD -> R.string.currency_mad
-    Currency.USD -> R.string.currency_usd
-    Currency.EUR -> R.string.currency_eur
-    Currency.GBP -> R.string.currency_gbp
-}
+/** Currency name in the current UI language. */
+@Composable
+fun Currency.localizedName(): String = displayName(currentLocale())
 
 @Composable
 fun RateFetchError.message(): String = when (this) {

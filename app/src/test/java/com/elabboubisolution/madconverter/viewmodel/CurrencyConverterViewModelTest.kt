@@ -1,13 +1,17 @@
 package com.elabboubisolution.madconverter.viewmodel
 
+import com.elabboubisolution.madconverter.data.local.FavoritesStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
+import com.elabboubisolution.madconverter.testing.SampleRates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -27,17 +31,8 @@ class CurrencyConverterViewModelTest {
 
     private val dispatcher: TestDispatcher = StandardTestDispatcher()
 
-    private val snapshot = RateSnapshot(
-        base = Currency.MAD,
-        rates = mapOf(
-            Currency.MAD to BigDecimal("1"),
-            Currency.USD to BigDecimal("0.100812"),
-            Currency.EUR to BigDecimal("0.089729"),
-            Currency.GBP to BigDecimal("0.076291"),
-        ),
-        lastUpdatedEpochSeconds = 1791158551L,
-        nextUpdateEpochSeconds = 1791246061L,
-    )
+    private val snapshot = SampleRates.snapshot
+    private val favorites = FakeFavoritesStore()
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -48,7 +43,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `starts loading then shows rate once loaded`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         dispatcher.scheduler.runCurrent()
 
         assertTrue(viewModel.uiState.value.isLoading)
@@ -78,7 +73,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `amount typed while loading is converted once rates arrive`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         viewModel.onAmountChange("1000")
         assertNull(viewModel.uiState.value.result)
 
@@ -135,7 +130,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `network error is exposed and retry recovers`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
@@ -156,7 +151,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry while a request is running does not start another`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         dispatcher.scheduler.runCurrent()
 
         viewModel.onRetry()
@@ -182,7 +177,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates are flagged and still convert`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
         dispatcher.scheduler.runCurrent()
 
@@ -199,7 +194,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry from stale keeps showing rates while refreshing then clears the flag`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -219,12 +214,83 @@ class CurrencyConverterViewModelTest {
         assertNull(refreshed.refreshError)
     }
 
+    @Test
+    fun `conversions and rate use newly supported currencies`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onToCurrencySelected(Currency.JPY)
+        assertEquals(BigDecimal("15840"), viewModel.uiState.value.result?.convertedAmount)
+
+        viewModel.onFromCurrencySelected(Currency.CAD)
+        viewModel.onToCurrencySelected(Currency.AED)
+        viewModel.onAmountChange("500")
+        val state = viewModel.uiState.value
+        assertEquals(Currency.CAD, state.from)
+        assertEquals(Currency.AED, state.to)
+        assertEquals(BigDecimal("1289.15"), state.result?.convertedAmount)
+    }
+
+    @Test
+    fun `swap works between new currencies and twice restores the pair`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onFromCurrencySelected(Currency.EUR)
+        viewModel.onToCurrencySelected(Currency.TRY)
+        viewModel.onAmountChange("100")
+
+        viewModel.onSwapCurrencies()
+        assertEquals(Currency.TRY, viewModel.uiState.value.from)
+        assertEquals(Currency.EUR, viewModel.uiState.value.to)
+        assertEquals("100", viewModel.uiState.value.amountInput)
+
+        viewModel.onSwapCurrencies()
+        assertEquals(Currency.EUR, viewModel.uiState.value.from)
+        assertEquals(Currency.TRY, viewModel.uiState.value.to)
+        assertEquals(BigDecimal("5491.95"), viewModel.uiState.value.result?.convertedAmount)
+    }
+
+    @Test
+    fun `favorites from the store are exposed and toggled`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        assertEquals(setOf(Currency.MAD, Currency.EUR, Currency.USD), viewModel.uiState.value.favorites)
+
+        viewModel.onToggleFavorite(Currency.JPY)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(setOf(Currency.MAD, Currency.EUR, Currency.USD, Currency.JPY), viewModel.uiState.value.favorites)
+
+        viewModel.onToggleFavorite(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(setOf(Currency.MAD, Currency.USD, Currency.JPY), viewModel.uiState.value.favorites)
+    }
+
+    @Test
+    fun `toggling a favorite does not change the conversion`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+        val before = viewModel.uiState.value
+
+        viewModel.onToggleFavorite(Currency.USD)
+        dispatcher.scheduler.runCurrent()
+
+        val after = viewModel.uiState.value
+        assertEquals(before.copy(favorites = after.favorites), after)
+    }
+
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository)
+        val viewModel = CurrencyConverterViewModel(repository, favorites)
         repository.complete(RatesResult.Available(rates, isStale = false))
         dispatcher.scheduler.runCurrent()
         return viewModel
+    }
+
+    private class FakeFavoritesStore : FavoritesStore {
+        private val state = MutableStateFlow(setOf(Currency.MAD, Currency.EUR, Currency.USD))
+        override val favorites: StateFlow<Set<Currency>> = state
+
+        override suspend fun setFavorite(currency: Currency, isFavorite: Boolean) {
+            state.value = if (isFavorite) state.value + currency else state.value - currency
+        }
     }
 
     /** Each call suspends until the test completes it, so loading states can be observed. */
