@@ -56,6 +56,16 @@ How the data flows:
 - The fee preference stays local (`FeePreferenceStore`, key `real_cost_fee_percent` in the `user_preferences` DataStore). A preset saves immediately. A custom value is saved only when the sheet closes, never while typing.
 - Real Cost does not currently take part in Copy/Share or conversion history. History still records the plain primary conversion.
 
+## Numeric format (Phase 11)
+
+- Every displayed number uses ONE format in English, French and Arabic alike: Western digits 0–9, `.` decimal, `,` thousands. Never use locale digits or separators. This covers the main result, rate line, Quick Conversions, Real Cost, History, Copy/Share, dates/times and error messages.
+- Percentages are always the number then `%` with no space, at most 2 decimals: `0%`, `2%`, `2.75%` (never `2,75 %` or `٪`).
+- All number formatting goes through `ui/format/Formatting.kt` (`formatDecimal`, `formatTypedAmount`, `formatPercent`, `PERCENT_SIGN`) and `ConversionText`, which take no `Locale`. Platform dates/times keep localized words but pass through `asciiDigits`.
+- The source amount keeps exactly the decimals the user entered (`formatTypedAmount` uses the `BigDecimal` scale): `1250.50` → `1,250.50`, `1250.00` → `1,250.00`, `1250.5` → `1,250.5`, `1250` → `1,250`. Parsing, conversion and history storage (`toPlainString`) all keep that scale. Copy/Share and History show the same text.
+- Target amounts keep their existing rounding: half-up to the currency's minor units (`fractionDigits`, 0 for JPY), independent of the typed decimals. Rates show 4 decimals.
+- Editable fields (amount, custom fee) are never reformatted while typing. They show exactly what was typed. Input accepts `,` or `.` as the decimal separator and Arabic-keyboard digits (`normalizeNumericInput`); only the displayed results use the unified format.
+- Arabic is RTL. Wrap displayed amounts, rates and "A → B" expressions in `ltr(...)` (Unicode LTR isolate) so they keep their reading order. Display only: never in Copy/Share text or stored values.
+
 ## Commands
 
 Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git Bash).

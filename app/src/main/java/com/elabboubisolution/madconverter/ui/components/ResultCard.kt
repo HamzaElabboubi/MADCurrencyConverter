@@ -27,7 +27,6 @@ import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
@@ -41,7 +40,6 @@ fun ResultCard(
     modifier: Modifier = Modifier,
     onRealCost: (() -> Unit)? = null,
 ) {
-    val locale = currentLocale()
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
@@ -53,12 +51,12 @@ fun ResultCard(
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
             ) {
                 Text(
-                    text = ltr(ConversionText.amount(conversion.amount, conversion.from, locale)),
+                    text = ltr(ConversionText.amount(conversion.amount, conversion.from)),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to, locale)),
+                    text = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to)),
                     style = MaterialTheme.typography.displaySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )

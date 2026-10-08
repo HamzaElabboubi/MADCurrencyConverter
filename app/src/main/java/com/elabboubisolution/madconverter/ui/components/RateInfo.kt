@@ -20,7 +20,6 @@ import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatLastUpdated
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
@@ -37,10 +36,9 @@ fun RateInfo(
     lastUpdatedEpochSeconds: Long?,
     modifier: Modifier = Modifier,
 ) {
-    val locale = currentLocale()
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = ltr(ConversionText.rate(from, to, rate, locale)),
+            text = ltr(ConversionText.rate(from, to, rate)),
             style = MaterialTheme.typography.titleMedium,
         )
         if (lastUpdatedEpochSeconds != null) {

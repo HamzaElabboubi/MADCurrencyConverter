@@ -19,7 +19,6 @@ import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.CurrencyConverter
 import com.elabboubisolution.madconverter.domain.model.Currency
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
@@ -34,7 +33,6 @@ fun AmountField(
     modifier: Modifier = Modifier,
 ) {
     val focusManager = LocalFocusManager.current
-    val locale = currentLocale()
     OutlinedTextField(
         value = value,
         onValueChange = { onValueChange(normalizeNumericInput(it)) },
@@ -51,7 +49,7 @@ fun AmountField(
                         AmountError.INVALID -> stringResource(R.string.error_invalid_amount)
                         AmountError.TOO_LARGE -> stringResource(
                             R.string.error_amount_too_large,
-                            formatDecimal(CurrencyConverter.MAX_AMOUNT, locale, minDigits = 2),
+                            formatDecimal(CurrencyConverter.MAX_AMOUNT, minDigits = 2),
                         )
                     }
                 )

@@ -72,6 +72,13 @@ class StringResourcesTest {
     }
 
     @Test
+    fun `strings use Western digits in every language`() {
+        (en + fr.mapKeys { "fr:${it.key}" } + ar.mapKeys { "ar:${it.key}" }).forEach { (key, res) ->
+            assertFalse("$key: ${res.value}", res.value.any { it.isDigit() && it !in '0'..'9' })
+        }
+    }
+
+    @Test
     fun `key terminology in Arabic`() {
         assertEquals("المبلغ", ar.getValue("amount_label").value)
         assertEquals("من", ar.getValue("from_label").value)

@@ -30,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.localizedName
 import com.elabboubisolution.madconverter.ui.format.ltr
@@ -64,7 +63,7 @@ fun QuickConversionsSection(
 private fun QuickConversionRow(conversion: Conversion, onClick: () -> Unit) {
     val currency = conversion.to
     val name = currency.localizedName()
-    val amount = formatDecimal(conversion.convertedAmount, currentLocale(), minDigits = currency.fractionDigits)
+    val amount = formatDecimal(conversion.convertedAmount, minDigits = currency.fractionDigits)
     val description = stringResource(R.string.quick_conversion_description, currency.code, name, amount)
     val clickLabel = stringResource(R.string.action_make_main)
     Row(

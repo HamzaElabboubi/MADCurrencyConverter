@@ -70,6 +70,13 @@ class HistoryStoreTest {
     }
 
     @Test
+    fun `entered trailing zeros are stored and read back unchanged`() = runTest {
+        openStore().record(conversion(amount = "1250.00", converted = "126.02"), wasStale = false)
+
+        assertEquals("1250.00", openStore().entries.first().single().amount.toPlainString())
+    }
+
+    @Test
     fun `copy then share of the same result is stored once`() = runTest {
         val store = openStore()
         store.record(conversion(), wasStale = false)

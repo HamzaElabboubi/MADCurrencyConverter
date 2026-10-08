@@ -15,47 +15,12 @@ import java.text.Bidi
 import java.util.Locale
 import java.util.TimeZone
 
-/** Presentation-only tests: business logic stays locale-independent. */
+/** Presentation-only tests for Arabic (RTL) text, dates and typed digits. */
 class LocaleFormattingTest {
 
-    private val en = Locale.US
-    private val fr = Locale.FRANCE
     private val ar = Locale.forLanguageTag("ar")
-    private val arMa = Locale.forLanguageTag("ar-MA")
-    private val amount = BigDecimal("2794.61")
-
-    // --- Decimals ---
-
-    @Test
-    fun `decimal and grouping separators follow the locale`() {
-        assertEquals("2,794.61", formatDecimal(amount, en, 2))
-        assertEquals("2 794,61", formatDecimal(amount, fr, 2))
-        // Arabic: Arabic-Indic digits with Arabic separators; Morocco: Latin digits.
-        assertEquals("٢٬٧٩٤٫٦١", formatDecimal(amount, ar, 2))
-        assertEquals("2.794,61", formatDecimal(amount, arMa, 2))
-    }
-
-    @Test
-    fun `zero decimal currencies stay without decimals in every locale`() {
-        val jpy = BigDecimal("15840")
-        val digits = Currency.JPY.fractionDigits
-        assertEquals("15,840", formatDecimal(jpy, en, digits))
-        assertEquals("15 840", formatDecimal(jpy, fr, digits))
-        assertEquals("١٥٬٨٤٠", formatDecimal(jpy, ar, digits))
-        assertEquals("15.840", formatDecimal(jpy, arMa, digits)) // "." groups thousands in Morocco
-    }
 
     // --- Percentages ---
-
-    @Test
-    fun `percentages follow the locale`() {
-        assertEquals("2.75%", formatPercent(BigDecimal("2.75"), en))
-        assertEquals("3%", formatPercent(BigDecimal("3"), en))
-        assertEquals("2,75 %", formatPercent(BigDecimal("2.75"), fr))
-        assertTrue(formatPercent(BigDecimal("2.75"), ar).startsWith("٢٫٧٥٪"))
-        assertEquals("%", percentSign(en))
-        assertEquals("٪", percentSign(ar))
-    }
 
     @Test
     fun `percentage presentation never changes the stored value`() {
@@ -96,7 +61,7 @@ class LocaleFormattingTest {
 
     @Test
     fun `without isolation a rate line is split and reordered inside Arabic text`() {
-        val line = ConversionText.rate(Currency.MAD, Currency.USD, BigDecimal("0.100812"), en)
+        val line = ConversionText.rate(Currency.MAD, Currency.USD, BigDecimal("0.100812"))
         val text = "سعر الصرف: $line"
         val levels = levels(text)
         val start = text.indexOf(line)
@@ -109,7 +74,7 @@ class LocaleFormattingTest {
 
     @Test
     fun `isolated rate keeps left to right reading order inside Arabic text`() {
-        val line = ConversionText.rate(Currency.MAD, Currency.USD, BigDecimal("0.100812"), en)
+        val line = ConversionText.rate(Currency.MAD, Currency.USD, BigDecimal("0.100812"))
         val text = "سعر الصرف: " + ltr(line)
         val levels = levels(text)
         val start = text.indexOf(line)
@@ -121,8 +86,8 @@ class LocaleFormattingTest {
 
     @Test
     fun `source to target stays source first under RTL`() {
-        val label = "${ConversionText.amount(BigDecimal("1000"), Currency.MAD, en)} → " +
-            ConversionText.money(BigDecimal("100.28"), Currency.USD, en)
+        val label = "${ConversionText.amount(BigDecimal("1000"), Currency.MAD)} → " +
+            ConversionText.money(BigDecimal("100.28"), Currency.USD)
         val text = "تحويل " + ltr(label)
         val levels = levels(text)
         val start = text.indexOf(label)
@@ -137,7 +102,6 @@ class LocaleFormattingTest {
     fun `isolation is display only, copied text stays clean`() {
         val shared = ConversionText.shareText(
             Conversion(Currency.MAD, Currency.USD, BigDecimal("1000"), BigDecimal("100.28"), BigDecimal("0.100284")),
-            ar,
         )
         assertTrue(shared.none { it == '⁦' || it == '⁩' })
         assertEquals("⁦x⁩", ltr("x"))

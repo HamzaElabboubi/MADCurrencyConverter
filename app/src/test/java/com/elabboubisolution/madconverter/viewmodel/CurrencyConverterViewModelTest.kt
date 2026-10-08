@@ -486,6 +486,23 @@ class CurrencyConverterViewModelTest {
     }
 
     @Test
+    fun `entered trailing zeros are kept for the result, copy and restore`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1250.50")
+
+        assertEquals("1250.50", viewModel.uiState.value.amountInput) // field text untouched
+        assertEquals("1250.50", viewModel.uiState.value.result?.amount?.toPlainString())
+
+        viewModel.onResultCopied()
+        dispatcher.scheduler.runCurrent()
+        assertEquals("1250.50", history.recorded.single().first.amount.toPlainString())
+
+        viewModel.onHistoryEntrySelected(historyEntry(amount = "1250.00", converted = "126.02"))
+        assertEquals("1250.00", viewModel.uiState.value.amountInput)
+        assertEquals("1250.00", viewModel.uiState.value.result?.amount?.toPlainString())
+    }
+
+    @Test
     fun `delete and clear are forwarded to the store`() = runTest(dispatcher) {
         val viewModel = loadedViewModel()
 

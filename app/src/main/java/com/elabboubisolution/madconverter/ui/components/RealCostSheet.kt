@@ -46,11 +46,10 @@ import com.elabboubisolution.madconverter.domain.RealCost
 import com.elabboubisolution.madconverter.domain.RealCostEstimate
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
-import com.elabboubisolution.madconverter.ui.format.currentLocale
+import com.elabboubisolution.madconverter.ui.format.PERCENT_SIGN
 import com.elabboubisolution.madconverter.ui.format.formatPercent
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
-import com.elabboubisolution.madconverter.ui.format.percentSign
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import java.math.BigDecimal
 
@@ -88,13 +87,12 @@ fun RealCostContent(
     onFeeCommitted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val locale = currentLocale()
     val focusManager = LocalFocusManager.current
     var customMode by rememberSaveable {
         mutableStateOf(RealCost.PRESETS.none { it.compareTo(estimate.feePercent) == 0 })
     }
     var customText by rememberSaveable {
-        // Plain ASCII like typed input (normalized), never locale digits the parser would reject.
+        // Plain ASCII like typed input (normalized), which the parser accepts.
         mutableStateOf(if (customMode) estimate.feePercent.toPlainString() else "")
     }
     val customInput = if (customMode) RealCost.parseFeePercent(customText) else null
@@ -115,8 +113,8 @@ fun RealCostContent(
         )
         Text(
             text = ltr(
-                "${ConversionText.amount(conversion.amount, conversion.from, locale)} " +
-                    ConversionText.approximate(conversion.convertedAmount, conversion.to, locale),
+                "${ConversionText.amount(conversion.amount, conversion.from)} " +
+                    ConversionText.approximate(conversion.convertedAmount, conversion.to),
             ),
             style = MaterialTheme.typography.titleMedium,
         )
@@ -136,7 +134,7 @@ fun RealCostContent(
                         onFeeChanged(preset)
                         onFeeCommitted()
                     },
-                    label = { Text(formatPercent(preset, locale)) },
+                    label = { Text(formatPercent(preset)) },
                 )
             }
             FilterChip(
@@ -161,7 +159,7 @@ fun RealCostContent(
                     (RealCost.parseFeePercent(text) as? FeeInput.Valid)?.let { onFeeChanged(it.percent) }
                 },
                 label = { Text(stringResource(R.string.fee_custom_label)) },
-                suffix = { Text(percentSign(locale)) },
+                suffix = { Text(PERCENT_SIGN) },
                 singleLine = true,
                 isError = customInput == FeeInput.Invalid || customInput == FeeInput.TooHigh,
                 supportingText = {
@@ -193,21 +191,20 @@ fun RealCostContent(
 
 @Composable
 private fun RealCostBreakdown(estimate: RealCostEstimate) {
-    val locale = currentLocale()
-    val percent = ltr(formatPercent(estimate.feePercent, locale))
+    val percent = ltr(formatPercent(estimate.feePercent))
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BreakdownRow(
             label = stringResource(R.string.real_cost_converted),
-            value = ltr(ConversionText.money(estimate.convertedAmount, estimate.currency, locale)),
+            value = ltr(ConversionText.money(estimate.convertedAmount, estimate.currency)),
         )
         BreakdownRow(
             label = stringResource(R.string.real_cost_fee, percent),
-            value = ltr(ConversionText.money(estimate.fee, estimate.currency, locale)),
+            value = ltr(ConversionText.money(estimate.fee, estimate.currency)),
         )
         HorizontalDivider()
         BreakdownRow(
             label = stringResource(R.string.real_cost_total),
-            value = ltr(ConversionText.money(estimate.total, estimate.currency, locale)),
+            value = ltr(ConversionText.money(estimate.total, estimate.currency)),
             emphasized = true,
         )
     }

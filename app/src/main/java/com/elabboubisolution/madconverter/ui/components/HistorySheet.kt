@@ -45,7 +45,6 @@ import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.ui.format.ConversionText
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.formatHistoryTimestamp
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
@@ -139,9 +138,8 @@ fun HistoryContent(
 
 @Composable
 private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () -> Unit) {
-    val locale = currentLocale()
-    val source = ConversionText.amount(entry.amount, entry.from, locale)
-    val target = ConversionText.money(entry.convertedAmount, entry.to, locale)
+    val source = ConversionText.amount(entry.amount, entry.from)
+    val target = ConversionText.money(entry.convertedAmount, entry.to)
     val time = formatHistoryTimestamp(entry.timestampMillis)
     val conversionLabel = ltr("$source → $target")
     val description = stringResource(R.string.history_entry_description, source, target, time)

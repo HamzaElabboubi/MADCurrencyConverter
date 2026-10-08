@@ -63,7 +63,6 @@ import com.elabboubisolution.madconverter.ui.components.ResultCard
 import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
 import com.elabboubisolution.madconverter.ui.components.SwapButton
 import com.elabboubisolution.madconverter.ui.format.ConversionText
-import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.message
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.viewmodel.AmountError
@@ -82,7 +81,6 @@ fun CurrencyConverterScreen(
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
-    val locale = currentLocale()
     val copiedMessage = stringResource(R.string.conversion_copied)
     val noShareAppMessage = stringResource(R.string.no_share_app)
     val shareSubject = stringResource(R.string.share_subject)
@@ -99,7 +97,7 @@ fun CurrencyConverterScreen(
             onToggleFavorite = viewModel::onToggleFavorite,
             onQuickConversionSelected = viewModel::onQuickConversionSelected,
             onCopy = { conversion ->
-                val text = ConversionText.shareText(conversion, locale)
+                val text = ConversionText.shareText(conversion)
                 scope.launch {
                     clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(shareSubject, text)))
                     // Android 13+ already shows its own copy confirmation; avoid a duplicate.
@@ -110,7 +108,7 @@ fun CurrencyConverterScreen(
                 viewModel.onResultCopied()
             },
             onShare = { conversion ->
-                val text = ConversionText.shareText(conversion, locale)
+                val text = ConversionText.shareText(conversion)
                 if (shareText(context, text, shareSubject, chooserTitle)) {
                     viewModel.onResultShared()
                 } else {
