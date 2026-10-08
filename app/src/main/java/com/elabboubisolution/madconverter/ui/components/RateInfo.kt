@@ -23,6 +23,7 @@ import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.formatLastUpdated
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
 
 private const val PROVIDER_URL = "https://www.exchangerate-api.com"
@@ -39,7 +40,7 @@ fun RateInfo(
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             text = ltr(ConversionText.rate(from, to, rate)),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.tabularFigures(),
         )
         if (lastUpdatedEpochSeconds != null) {
             Text(

@@ -38,7 +38,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
@@ -49,6 +48,7 @@ import com.elabboubisolution.madconverter.ui.format.formatHistoryTimestamp
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.ui.theme.extendedColors
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
 import kotlinx.coroutines.launch
 
@@ -147,7 +147,8 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
     val clickLabel = stringResource(R.string.action_convert_again)
     ListItem(
         headlineContent = {
-            Text(conversionLabel, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            // Never truncated: a cut-off amount would be misleading.
+            Text(conversionLabel, style = MaterialTheme.typography.bodyLarge.tabularFigures())
         },
         supportingContent = {
             Column {
@@ -155,7 +156,7 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
                 if (entry.wasStale) {
                     Text(
                         text = stringResource(R.string.history_stale_rate),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.extendedColors.warning,
                     )
                 }

@@ -34,6 +34,7 @@ import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.localizedName
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
 
 /** Secondary list of the amount converted into favorites; tapping a row makes it the main target. */
@@ -97,7 +98,7 @@ private fun QuickConversionRow(conversion: Conversion, onClick: () -> Unit) {
         // The amount never shrinks: the name gives way first.
         Text(
             text = ltr(stringResource(R.string.approx_amount, amount)),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.bodyLarge.tabularFigures(),
             maxLines = 1,
             modifier = Modifier.clearAndSetSemantics {},
         )

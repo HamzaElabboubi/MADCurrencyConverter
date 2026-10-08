@@ -115,6 +115,14 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Startup system bars: light mode `windowLightStatusBar`/`windowLightNavigationBar` = `true` (dark icons), dark mode `false` (light icons). Once running, `MainActivity.enableEdgeToEdge()` manages the bars.
 - No splash library or extra splash screen; no new dependencies. Verified with cold starts (process killed, frame captures): no white flash in dark mode (English and Arabic), and startup time is unchanged vs. the previous light-only theme.
 
+### Typography (Phase 12.3)
+
+- `ui/theme/Type.kt` defines the Material 3 scale, system font only (no font files, so Arabic keeps platform shaping). Hierarchy: `displaySmall` 36sp Medium = main result (the focal point) > `headlineSmall` 24sp = typed amount > `titleLarge` 22sp Medium = screen/sheet titles > `titleMedium` 16sp Medium = result source line, exchange rate > `body*` supporting text. `bodySmall` (12sp) only where space is tight (selector currency names, attribution); disclaimers and warnings use `bodyMedium`. `TypographyTest` guards the hierarchy.
+- Numeric values (typed amount, result, rate, Quick Conversions, Real Cost, History) use `style.tabularFigures()` (`fontFeatureSettings = "tnum"`). Roboto's digits are already tabular; it protects against system fonts with proportional digits. `TabularFiguresTest` (instrumented) checks equal digit widths on the device font.
+- The main result is one line with `TextAutoSize.StepBased(min = 12.sp, max = displaySmall)`. It shrinks only when it doesn't fit, so a large result is never split inside the number. Ordinary amounts keep full accessibility font scaling (verified unchanged at 200%). The largest case (`≈ 15,851,512,000,000 JPY`) renders around 29dp.
+- Real Cost `BreakdownRow`: the amount never wraps. It sits beside its label while the label keeps ≥ 120dp, otherwise it moves below the label, end-aligned (no letter-by-letter label breaks). History rows are never truncated (no `maxLines`/ellipsis), so amounts always show in full.
+- Verified at 100/130/150/200% font scale, light/dark, English/French/Arabic RTL. Amounts stay inside `ltr(...)` isolates.
+
 ## Known issues
 
 - **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:

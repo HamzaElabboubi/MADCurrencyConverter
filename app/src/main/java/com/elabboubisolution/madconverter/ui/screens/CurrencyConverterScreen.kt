@@ -184,7 +184,7 @@ fun CurrencyConverterContent(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier
                         .weight(1f)
                         .semantics { heading() },

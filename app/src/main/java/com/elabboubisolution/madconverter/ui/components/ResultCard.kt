@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -23,13 +24,18 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
+
+/** Smallest size the main result shrinks to; small enough for the largest amounts at 200% font size. */
+private val RESULT_MIN_FONT_SIZE = 12.sp
 
 /** Main result, with Copy and Share actions (the only actions that record history). */
 @Composable
@@ -52,13 +58,21 @@ fun ResultCard(
             ) {
                 Text(
                     text = ltr(ConversionText.amount(conversion.amount, conversion.from)),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.tabularFigures(),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
+                // One line that shrinks to fit: a large result is never split inside the number
+                // (e.g. "100,305,000,000." / "00 USD" at 200% font size).
+                val resultStyle = MaterialTheme.typography.displaySmall.tabularFigures()
                 Text(
                     text = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to)),
-                    style = MaterialTheme.typography.displaySmall,
+                    style = resultStyle,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = RESULT_MIN_FONT_SIZE,
+                        maxFontSize = resultStyle.fontSize,
+                    ),
                 )
             }
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

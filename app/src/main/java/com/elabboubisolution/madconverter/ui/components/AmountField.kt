@@ -22,6 +22,7 @@ import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import com.elabboubisolution.madconverter.viewmodel.AmountError
 
 @Composable
@@ -39,7 +40,7 @@ fun AmountField(
         modifier = modifier.fillMaxWidth(),
         label = { Text(stringResource(R.string.amount_label)) },
         suffix = { Text(currency.code) },
-        textStyle = MaterialTheme.typography.headlineSmall,
+        textStyle = MaterialTheme.typography.headlineSmall.tabularFigures(),
         singleLine = true,
         isError = error != null,
         supportingText = error?.let {

@@ -1,6 +1,7 @@
 package com.elabboubisolution.madconverter.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -29,6 +30,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
@@ -36,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -51,6 +54,7 @@ import com.elabboubisolution.madconverter.ui.format.formatPercent
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
 
 /**
@@ -116,7 +120,7 @@ fun RealCostContent(
                 "${ConversionText.amount(conversion.amount, conversion.from)} " +
                     ConversionText.approximate(conversion.convertedAmount, conversion.to),
             ),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.tabularFigures(),
         )
 
         Text(
@@ -183,7 +187,7 @@ fun RealCostContent(
 
         Text(
             text = stringResource(R.string.real_cost_disclaimer),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -210,27 +214,42 @@ private fun RealCostBreakdown(estimate: RealCostEstimate) {
     }
 }
 
+/** Narrowest the label may get beside its amount before the amount moves below it. */
+private val MIN_LABEL_WIDTH = 120.dp
+private val LABEL_GAP = 12.dp
+
 @Composable
 private fun BreakdownRow(label: String, value: String, emphasized: Boolean = false) {
-    val style = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            text = label,
-            style = style,
-            fontWeight = if (emphasized) FontWeight.SemiBold else null,
-            modifier = Modifier.weight(1f),
-        )
-        // The amount never wraps; a long label wraps instead.
-        Text(
-            text = value,
-            style = style,
-            fontWeight = if (emphasized) FontWeight.SemiBold else null,
-            maxLines = 1,
-        )
+    val baseStyle = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge
+    val weight = if (emphasized) FontWeight.SemiBold else baseStyle.fontWeight
+    val labelStyle = baseStyle.copy(fontWeight = weight)
+    val valueStyle = baseStyle.tabularFigures().copy(fontWeight = weight)
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        // The amount never wraps. Beside a label that keeps a readable width when it fits;
+        // otherwise (huge amounts, large font sizes) below the label, end-aligned.
+        val valueWidth = with(LocalDensity.current) {
+            measurer.measure(value, valueStyle, maxLines = 1).size.width.toDp()
+        }
+        if (valueWidth + LABEL_GAP + MIN_LABEL_WIDTH <= maxWidth) {
+            Row(
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(LABEL_GAP),
+            ) {
+                Text(text = label, style = labelStyle, modifier = Modifier.weight(1f))
+                Text(text = value, style = valueStyle, maxLines = 1)
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(text = label, style = labelStyle)
+                Text(
+                    text = value,
+                    style = valueStyle,
+                    maxLines = 1,
+                    modifier = Modifier.align(Alignment.End),
+                )
+            }
+        }
     }
 }
 
