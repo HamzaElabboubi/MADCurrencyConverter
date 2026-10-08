@@ -98,7 +98,15 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 ## UI / theming
 
 - Single-activity Compose app: `MainActivity` calls `enableEdgeToEdge()` and wraps content in `MADCurrencyConverterTheme` + `Scaffold`; pass `innerPadding` to content.
-- `ui/theme/Theme.kt` uses dynamic color on Android 12+ and falls back to the static `Color.kt` schemes otherwise, so custom palette changes in `Color.kt` won't be visible on 12+ devices unless `dynamicColor = false`.
+- `ui/theme/Theme.kt` applies the brand light/dark schemes from `Color.kt`. Wallpaper-based dynamic color is **off** by default (`dynamicColor = false`), so the app looks the same on every device.
+
+### Branding colors (Phase 12.1)
+
+- Approved references: deep green `#123B35`, teal `#168579`, gold `#D5A64C`, light background `#F5F7F4`. Deep green and the background are used as-is (light `onPrimaryContainer`/`background`, dark `primaryContainer`).
+- The raw teal and gold are too light for text on the light background, so text-bearing roles use deeper variants: light `primary` `#0E6B61`, light `tertiary`/`warning` `#7A5A14`. Dark mode uses lighter variants.
+- Every color role is set explicitly in both schemes (including surface containers), so no Material template purple can leak through. Don't use raw `Color(...)` in components; use theme roles.
+- Contrast (WCAG 2.1 AA): text ≥ 4.5:1, icons/outlines/indicators ≥ 3:1, on the backgrounds the components actually use. `ThemeContrastTest` enforces this. Add a pair there when a component puts a new color on a new background.
+- Warning colors: Material 3 has no warning role, so `ExtendedColors` (`MaterialTheme.extendedColors.warning`, `onWarning`, `warningContainer`, `onWarningContainer`, gold) marks stale exchange-rate information (`StaleRateBanner`, History "stale rate" note). Errors use the M3 `error`/`errorContainer` roles. Text buttons on these containers use the matching `on…Container` color, not `primary`.
 
 ## Known issues
 

@@ -48,6 +48,7 @@ import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.formatHistoryTimestamp
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.extendedColors
 import java.math.BigDecimal
 import kotlinx.coroutines.launch
 
@@ -155,7 +156,7 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
                     Text(
                         text = stringResource(R.string.history_stale_rate),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.extendedColors.warning,
                     )
                 }
             }

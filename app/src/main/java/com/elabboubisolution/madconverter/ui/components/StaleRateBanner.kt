@@ -25,6 +25,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import com.elabboubisolution.madconverter.ui.theme.extendedColors
 
 /**
  * Shown above cached rates that could not be refreshed, so they are never mistaken for live ones.
@@ -40,8 +41,8 @@ fun StaleRateBanner(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+            containerColor = MaterialTheme.extendedColors.warningContainer,
+            contentColor = MaterialTheme.extendedColors.onWarningContainer,
         ),
     ) {
         Column(modifier = Modifier.padding(start = 20.dp, top = 16.dp, end = 12.dp, bottom = 8.dp)) {
@@ -65,11 +66,11 @@ fun StaleRateBanner(
                     )
                 } else {
                     // Same color as the banner text: the default primary color can lack contrast
-                    // on tertiaryContainer (observed in dark mode).
+                    // on the warning container.
                     TextButton(
                         onClick = onRetry,
                         colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                            contentColor = MaterialTheme.extendedColors.onWarningContainer,
                         ),
                     ) { Text(stringResource(R.string.retry)) }
                 }
