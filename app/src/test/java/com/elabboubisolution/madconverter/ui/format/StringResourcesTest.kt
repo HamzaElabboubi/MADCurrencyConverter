@@ -44,6 +44,7 @@ class StringResourcesTest {
             assertFalse(key in fr || key in ar)
         }
         assertEquals("Rates By Exchange Rate API", en.getValue("attribution").value)
+        assertEquals("Currency Converter", en.getValue("app_name").value)
     }
 
     @Test

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +24,9 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -39,6 +44,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
@@ -144,6 +150,7 @@ private enum class PickerSide { FROM, TO }
 
 private val noConversionAction: (Conversion) -> Unit = {}
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CurrencyConverterContent(
     state: ConverterUiState,
@@ -167,67 +174,64 @@ fun CurrencyConverterContent(
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showRealCost by rememberSaveable { mutableStateOf(false) }
 
-    Box(
+    // Pinned top app bar: always visible, the content scrolls beneath it.
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+    Column(
         modifier = modifier
             .fillMaxSize()
-            .imePadding()
-            .verticalScroll(rememberScrollState()),
-        contentAlignment = Alignment.TopCenter,
+            .nestedScroll(scrollBehavior.nestedScrollConnection),
     ) {
-        Column(
+        ConverterTopBar(onHistory = { showHistory = true }, scrollBehavior = scrollBehavior)
+        Box(
             modifier = Modifier
-                .widthIn(max = 560.dp)
+                .weight(1f)
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
+                .imePadding()
+                .verticalScroll(rememberScrollState()),
+            contentAlignment = Alignment.TopCenter,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier
-                        .weight(1f)
-                        .semantics { heading() },
-                )
-                IconButton(onClick = { showHistory = true }) {
-                    Icon(painterResource(R.drawable.ic_history), stringResource(R.string.history_open))
-                }
-            }
-
-            AmountField(
-                value = state.amountInput,
-                onValueChange = onAmountChange,
-                currency = state.from,
-                error = state.amountError,
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth()
+                    .padding(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                CurrencySelectorField(
-                    label = stringResource(R.string.from_label),
+                AmountField(
+                    value = state.amountInput,
+                    onValueChange = onAmountChange,
                     currency = state.from,
-                    onClick = { pickerSide = PickerSide.FROM },
-                    modifier = Modifier.weight(1f),
+                    error = state.amountError,
                 )
-                SwapButton(onClick = onSwap)
-                CurrencySelectorField(
-                    label = stringResource(R.string.to_label),
-                    currency = state.to,
-                    onClick = { pickerSide = PickerSide.TO },
-                    modifier = Modifier.weight(1f),
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CurrencySelectorField(
+                        label = stringResource(R.string.from_label),
+                        currency = state.from,
+                        onClick = { pickerSide = PickerSide.FROM },
+                        modifier = Modifier.weight(1f),
+                    )
+                    SwapButton(onClick = onSwap)
+                    CurrencySelectorField(
+                        label = stringResource(R.string.to_label),
+                        currency = state.to,
+                        onClick = { pickerSide = PickerSide.TO },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
+                ConversionSection(
+                    state = state,
+                    onRetry = onRetry,
+                    onQuickConversionSelected = onQuickConversionSelected,
+                    onCopy = onCopy,
+                    onShare = onShare,
+                    onRealCost = { showRealCost = true },
                 )
             }
-
-            ConversionSection(
-                state = state,
-                onRetry = onRetry,
-                onQuickConversionSelected = onQuickConversionSelected,
-                onCopy = onCopy,
-                onShare = onShare,
-                onRealCost = { showRealCost = true },
-            )
         }
     }
 
@@ -266,6 +270,32 @@ fun CurrencyConverterContent(
             onDismiss = { showHistory = false },
         )
     }
+}
+
+/**
+ * Small Material 3 top app bar with the app name and the only History action. Its title is
+ * start-aligned, so it moves to the right in RTL. It draws behind the status bar and tints
+ * itself once the content scrolls beneath it.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ConverterTopBar(onHistory: () -> Unit, scrollBehavior: TopAppBarScrollBehavior) {
+    TopAppBar(
+        title = {
+            Text(
+                text = stringResource(R.string.app_name),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
+            )
+        },
+        actions = {
+            IconButton(onClick = onHistory) {
+                Icon(painterResource(R.drawable.ic_history), stringResource(R.string.history_open))
+            }
+        },
+        scrollBehavior = scrollBehavior,
+    )
 }
 
 @Composable

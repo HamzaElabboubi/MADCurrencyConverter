@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-"MAD Currency Converter" is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. V1 (spec phases 1–6) is done: API, conversion logic, UI, offline cache and the AdMob test banner. V1.5 is in progress. Its Phase 7 adds 11 currencies, a searchable picker and favorites.
+"Currency Converter" (formerly "MAD Currency Converter"; renamed in Phase 12.4) is a single-module Android app (`:app`, package `com.elabboubisolution.madconverter`) built with Jetpack Compose + Material 3. MAD = Moroccan Dirham. V1 (spec phases 1–6) is done: API, conversion logic, UI, offline cache and the AdMob test banner. V1.5 is in progress. Its Phase 7 adds 11 currencies, a searchable picker and favorites.
 
 How the data flows:
 - **`data/remote`**: `ErApiRateProvider` calls ExchangeRate-API's open endpoint (`open.er-api.com/v6/latest/MAD`, no key) through Retrofit and turns every failure into a typed `RateFetchError`. Errors arrive as HTTP 200 with `"result":"error"`, so check the body as well as the status. Rates are parsed straight to `BigDecimal`.
@@ -123,6 +123,14 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Real Cost `BreakdownRow`: the amount never wraps. It sits beside its label while the label keeps ≥ 120dp, otherwise it moves below the label, end-aligned (no letter-by-letter label breaks). History rows are never truncated (no `maxLines`/ellipsis), so amounts always show in full.
 - Verified at 100/130/150/200% font scale, light/dark, English/French/Arabic RTL. Amounts stay inside `ltr(...)` isolates.
 
+### Application Name and Top App Bar (Phase 12.4)
+
+- Approved name: **Currency Converter**. It's `app_name` in `values/strings.xml`, `translatable="false"`: the English brand name is used unchanged in French and Arabic. `StringResourcesTest` checks it. It's the launcher label via the `<application>` label only (the activity has no label of its own). The application ID, package, namespace, DataStore file names and the Gradle project name (`rootProject.name`) are unchanged.
+- `CurrencyConverterContent` starts with a pinned Material 3 small `TopAppBar` (`ConverterTopBar`, 64dp, `TopAppBarDefaults.pinnedScrollBehavior()` connected through `nestedScroll`). It never scrolls away. The content scrolls beneath it, and it tints from `surface` to `surfaceContainer` once content is under it. The title is one line, start-aligned (right in RTL), marked `heading()`.
+- History has exactly one entry point: the top bar action (`IconButton`, 48dp touch target, localized `history_open` description). Don't add another. TalkBack order: title → History → amount → rest of the screen.
+- Insets: `MainActivity`'s Scaffold uses `contentWindowInsets` without the top side, so the `TopAppBar` draws behind the status bar and applies the status-bar inset itself. Bottom/horizontal insets and the AdMob `bottomBar` are unchanged, and content never draws under the banner.
+- Verified: English/French/Arabic, light/dark, 100/130/150/200% font scale (title not truncated at 200%), scrolling with the banner loaded (History stays reachable), launcher label. Existing features and AdMob are unchanged.
+
 ## Known issues
 
 - **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:
@@ -134,4 +142,5 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
   In Phase 7 the `ExposedDropdownMenuBox` selector was replaced by `CurrencySelectorField` + `CurrencyPickerSheet`. Eight controlled runs, with `getevent` recording and no external input, were clean. Five more controlled runs in each of Phases 8, 9 and 10 were also clean. It remains non-reproducible and must not be marked as fixed.
 
   Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
+- **Unexplained History entry (observation, open):** during Phase 12.4 emulator validation, History contained "200 USD → 1,993.92 MAD" at 12:54 PM, which no test script created. It appeared while the emulator was running and the scripts were idle. The cause is unknown: possibly manual input on the emulator window, not established. No History behavior was changed. If similar entries appear in a controlled run with no external input (check with `getevent`), investigate it together with the intermittent issue above.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.
