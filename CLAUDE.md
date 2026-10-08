@@ -108,6 +108,13 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Contrast (WCAG 2.1 AA): text ≥ 4.5:1, icons/outlines/indicators ≥ 3:1, on the backgrounds the components actually use. `ThemeContrastTest` enforces this. Add a pair there when a component puts a new color on a new background.
 - Warning colors: Material 3 has no warning role, so `ExtendedColors` (`MaterialTheme.extendedColors.warning`, `onWarning`, `warningContainer`, `onWarningContainer`, gold) marks stale exchange-rate information (`StaleRateBanner`, History "stale rate" note). Errors use the M3 `error`/`errorContainer` roles. Text buttons on these containers use the matching `on…Container` color, not `primary`.
 
+### Startup window (Phase 12.2)
+
+- The native window theme (`Theme.MADCurrencyConverter`) is shown before Compose draws its first frame and is the Android 12+ splash background. It follows the system dark mode: `values/themes.xml` (parent `android:Theme.Material.Light.NoActionBar`) and `values-night/themes.xml` (parent `android:Theme.Material.NoActionBar`).
+- `android:windowBackground` = `@color/window_background`: `#F5F7F4` (`values/colors.xml`) / `#0E1513` (`values-night/colors.xml`). These must equal the Compose `LightSurface`/`DarkSurface`; `WindowThemeTest` checks it. Change both together.
+- Startup system bars: light mode `windowLightStatusBar`/`windowLightNavigationBar` = `true` (dark icons), dark mode `false` (light icons). Once running, `MainActivity.enableEdgeToEdge()` manages the bars.
+- No splash library or extra splash screen; no new dependencies. Verified with cold starts (process killed, frame captures): no white flash in dark mode (English and Arabic), and startup time is unchanged vs. the previous light-only theme.
+
 ## Known issues
 
 - **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:
