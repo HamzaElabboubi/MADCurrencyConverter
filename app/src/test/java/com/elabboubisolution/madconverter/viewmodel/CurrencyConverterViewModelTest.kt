@@ -1,5 +1,7 @@
 package com.elabboubisolution.madconverter.viewmodel
 
+import com.elabboubisolution.madconverter.data.local.CurrencyPair
+import com.elabboubisolution.madconverter.data.local.CurrencyPairStore
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
 import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.HistoryStore
@@ -14,6 +16,7 @@ import com.elabboubisolution.madconverter.testing.SampleRates
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -29,6 +32,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import java.io.IOException
 import java.math.BigDecimal
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -36,10 +40,14 @@ class CurrencyConverterViewModelTest {
 
     private val dispatcher: TestDispatcher = StandardTestDispatcher()
 
+    /** Same limit as MainActivity's MAX_PAIR_WAIT_MILLIS. */
+    private val startupWait = 500L
+
     private val snapshot = SampleRates.snapshot
     private val favorites = FakeFavoritesStore()
     private val history = FakeHistoryStore()
     private val fees = FakeFeePreferenceStore()
+    private val pairs = FakeCurrencyPairStore()
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -50,7 +58,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `starts loading then shows rate once loaded`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         dispatcher.scheduler.runCurrent()
 
         assertTrue(viewModel.uiState.value.isLoading)
@@ -80,7 +88,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `amount typed while loading is converted once rates arrive`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         viewModel.onAmountChange("1000")
         assertNull(viewModel.uiState.value.result)
 
@@ -137,7 +145,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `network error is exposed and retry recovers`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
@@ -158,7 +166,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry while a request is running does not start another`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         dispatcher.scheduler.runCurrent()
 
         viewModel.onRetry()
@@ -184,7 +192,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates are flagged and still convert`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
         dispatcher.scheduler.runCurrent()
 
@@ -201,7 +209,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `retry from stale keeps showing rates while refreshing then clears the flag`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -342,7 +350,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates still produce quick conversions`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
 
@@ -357,7 +365,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `typing and tapping quick conversions never reload rates`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
         favorites.set(Currency.EUR, Currency.GBP, Currency.AED, Currency.JPY)
@@ -434,7 +442,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `offline stale copy and share work and are recorded as stale without any refresh`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.NoConnection))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -612,7 +620,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `stale cached rates still give a real cost estimate`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -626,7 +634,7 @@ class CurrencyConverterViewModelTest {
     @Test
     fun `real cost never reloads rates nor records history`() = runTest(dispatcher) {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
         viewModel.onAmountChange("1000")
@@ -662,12 +670,352 @@ class CurrencyConverterViewModelTest {
         rate: String = "0.100812",
     ) = HistoryEntry("h1", from, to, BigDecimal(amount), BigDecimal(converted), BigDecimal(rate), 0L, false)
 
+    // --- Last selected currency pair (Phase 12.7) ---
+
+    @Test
+    fun `fresh install starts with MAD to USD and writes nothing`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        assertEquals(Currency.MAD, viewModel.uiState.value.from)
+        assertEquals(Currency.USD, viewModel.uiState.value.to)
+        assertEquals(emptyList<CurrencyPair>(), pairs.writes)
+    }
+
+    @Test
+    fun `a saved pair is restored at startup without being written back`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("100")
+
+        val state = viewModel.uiState.value
+        assertEquals(Currency.EUR, state.from)
+        assertEquals(Currency.GBP, state.to)
+        assertEquals(Currency.GBP, state.result?.to)
+        assertEquals(emptyList<CurrencyPair>(), pairs.writes)
+    }
+
+    @Test
+    fun `pair restoration is reported once the saved pair has been read`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        val slowRead = CompletableDeferred<Unit>().also { pairs.readGate = it }
+        val viewModel = loadedViewModel()
+        assertFalse(viewModel.isPairRestored.value)
+
+        slowRead.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+
+        assertTrue(viewModel.isPairRestored.value)
+        assertEquals(Currency.EUR, viewModel.uiState.value.from)
+    }
+
+    @Test
+    fun `pair restoration is reported even when nothing was saved`() = runTest(dispatcher) {
+        assertTrue(loadedViewModel().isPairRestored.value)
+    }
+
+    // Startup wait (MainActivity shows the screen once awaitPairRestored returns).
+
+    @Test
+    fun `startup wait ends at once when nothing is saved`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        val start = dispatcher.scheduler.currentTime
+
+        assertTrue(viewModel.awaitPairRestored(startupWait))
+        assertEquals("no waiting", start, dispatcher.scheduler.currentTime)
+        assertEquals(Currency.MAD, viewModel.uiState.value.from)
+    }
+
+    @Test
+    fun `startup wait ends as soon as a fast read restores the pair`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        val slowRead = CompletableDeferred<Unit>().also { pairs.readGate = it }
+        val viewModel = loadedViewModel()
+        val waited = async { viewModel.awaitPairRestored(startupWait) }
+
+        dispatcher.scheduler.advanceTimeBy(30)
+        slowRead.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+
+        assertTrue(waited.isCompleted)
+        assertTrue(waited.await())
+        assertEquals("shown at 30ms, not at the limit", 30L, dispatcher.scheduler.currentTime)
+        assertEquals(Currency.EUR, viewModel.uiState.value.from)
+    }
+
+    @Test
+    fun `a read slower than the startup wait shows the default, then the saved pair`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        val slowRead = CompletableDeferred<Unit>().also { pairs.readGate = it }
+        val viewModel = loadedViewModel()
+        val waited = async { viewModel.awaitPairRestored(startupWait) }
+
+        dispatcher.scheduler.advanceTimeBy(startupWait - 1)
+        dispatcher.scheduler.runCurrent()
+        assertFalse("still waiting just before the limit", waited.isCompleted)
+
+        dispatcher.scheduler.advanceTimeBy(1)
+        dispatcher.scheduler.runCurrent()
+        assertTrue("never waits longer than the limit", waited.isCompleted)
+        assertFalse(waited.await())
+        // The screen now shows the default pair...
+        assertEquals(Currency.MAD, viewModel.uiState.value.from)
+        assertEquals(Currency.USD, viewModel.uiState.value.to)
+
+        // ...and the saved pair once the read finishes (300ms later here).
+        dispatcher.scheduler.advanceTimeBy(300)
+        slowRead.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(Currency.EUR, viewModel.uiState.value.from)
+        assertEquals(Currency.GBP, viewModel.uiState.value.to)
+        assertTrue(viewModel.isPairRestored.value)
+        assertEquals("restoring is not a user change", emptyList<CurrencyPair>(), pairs.writes)
+    }
+
+    @Test
+    fun `a user choice after the startup wait beats a late read`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        val slowRead = CompletableDeferred<Unit>().also { pairs.readGate = it }
+        val viewModel = loadedViewModel()
+        val waited = async { viewModel.awaitPairRestored(startupWait) }
+        dispatcher.scheduler.advanceTimeBy(startupWait)
+        dispatcher.scheduler.runCurrent()
+        assertFalse(waited.await())
+
+        viewModel.onToCurrencySelected(Currency.JPY)
+        slowRead.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(Currency.MAD, viewModel.uiState.value.from)
+        assertEquals(Currency.JPY, viewModel.uiState.value.to)
+        assertEquals(CurrencyPair(Currency.MAD, Currency.JPY), pairs.saved)
+    }
+
+    @Test
+    fun `an unreadable saved pair keeps the default and ends the startup wait`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        pairs.failRead = true
+
+        val viewModel = loadedViewModel()
+
+        assertTrue(viewModel.isPairRestored.value)
+        assertTrue(viewModel.awaitPairRestored(startupWait))
+        assertEquals(Currency.MAD, viewModel.uiState.value.from)
+        assertEquals(Currency.USD, viewModel.uiState.value.to)
+        assertEquals(emptyList<CurrencyPair>(), pairs.writes)
+    }
+
+    @Test
+    fun `after a rotation the startup wait returns at once`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.EUR, Currency.GBP)
+        val viewModel = loadedViewModel()
+        assertTrue(viewModel.awaitPairRestored(startupWait))
+        val start = dispatcher.scheduler.currentTime
+
+        // The new Activity asks the same (retained) ViewModel again.
+        assertTrue(viewModel.awaitPairRestored(startupWait))
+        assertEquals(start, dispatcher.scheduler.currentTime)
+    }
+
+    @Test
+    fun `source and target selections are saved`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onFromCurrencySelected(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(CurrencyPair(Currency.EUR, Currency.USD), pairs.saved)
+
+        viewModel.onToCurrencySelected(Currency.JPY)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(CurrencyPair(Currency.EUR, Currency.JPY), pairs.saved)
+    }
+
+    @Test
+    fun `picking the currency of the other side saves the swapped pair`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onToCurrencySelected(Currency.MAD)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(CurrencyPair(Currency.USD, Currency.MAD)), pairs.writes)
+    }
+
+    @Test
+    fun `swap is saved as one pair`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onSwapCurrencies()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(CurrencyPair(Currency.USD, Currency.MAD)), pairs.writes)
+    }
+
+    @Test
+    fun `restoring a history entry saves both currencies in one write`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onHistoryEntrySelected(
+            historyEntry(from = Currency.EUR, to = Currency.MAD, amount = "250", converted = "2795.20"),
+        )
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(CurrencyPair(Currency.EUR, Currency.MAD)), pairs.writes)
+    }
+
+    @Test
+    fun `choosing a quick conversion saves the new target`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onQuickConversionSelected(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(CurrencyPair(Currency.MAD, Currency.EUR)), pairs.writes)
+    }
+
+    @Test
+    fun `typing, favorites, fees and retry never save the pair`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onAmountChange("1000")
+        viewModel.onToggleFavorite(Currency.GBP)
+        viewModel.onFeePercentChanged(BigDecimal("2"))
+        viewModel.onFeePercentCommitted()
+        viewModel.onRetry()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(emptyList<CurrencyPair>(), pairs.writes)
+    }
+
+    @Test
+    fun `a saved pair read after the user changed the pair is ignored`() = runTest(dispatcher) {
+        pairs.saved = CurrencyPair(Currency.GBP, Currency.JPY)
+        val slowRead = CompletableDeferred<Unit>().also { pairs.readGate = it }
+        val viewModel = loadedViewModel()
+        assertEquals("not restored yet", Currency.MAD, viewModel.uiState.value.from)
+
+        // The user picks EUR -> MAD before the saved pair has been read.
+        viewModel.onFromCurrencySelected(Currency.EUR)
+        viewModel.onToCurrencySelected(Currency.MAD)
+        slowRead.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(Currency.EUR, viewModel.uiState.value.from)
+        assertEquals(Currency.MAD, viewModel.uiState.value.to)
+        assertEquals(CurrencyPair(Currency.EUR, Currency.MAD), pairs.saved)
+    }
+
+    @Test
+    fun `rapid changes end with the final pair saved last`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+
+        viewModel.onToCurrencySelected(Currency.EUR)
+        viewModel.onSwapCurrencies()
+        viewModel.onToCurrencySelected(Currency.GBP)
+        viewModel.onFromCurrencySelected(Currency.JPY)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(CurrencyPair(Currency.JPY, Currency.GBP), pairs.writes.last())
+        assertEquals(CurrencyPair(Currency.JPY, Currency.GBP), pairs.saved)
+    }
+
+    @Test
+    fun `a slow write cannot overwrite a newer pair`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        val slowWrite = CompletableDeferred<Unit>().also { pairs.saveGate = it }
+
+        viewModel.onToCurrencySelected(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+        assertEquals("first write started and is waiting", 1, pairs.saveCalls)
+
+        viewModel.onToCurrencySelected(Currency.GBP)
+        viewModel.onSwapCurrencies()
+        dispatcher.scheduler.runCurrent()
+        // One writer: newer pairs wait, so they can never be overtaken by the older write.
+        assertEquals("no second write while the first is running", 1, pairs.saveCalls)
+        slowWrite.complete(Unit)
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(
+            listOf(CurrencyPair(Currency.MAD, Currency.EUR), CurrencyPair(Currency.GBP, Currency.MAD)),
+            pairs.writes,
+        )
+        assertEquals(CurrencyPair(Currency.GBP, Currency.MAD), pairs.saved)
+        assertEquals(Currency.GBP, viewModel.uiState.value.from)
+    }
+
+    @Test
+    fun `a failed write keeps the pair in memory and later changes are still saved`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        pairs.failNextSave = true
+
+        viewModel.onToCurrencySelected(Currency.EUR)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(Currency.EUR, viewModel.uiState.value.to)
+        assertNull(pairs.saved)
+
+        viewModel.onToCurrencySelected(Currency.GBP)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(CurrencyPair(Currency.MAD, Currency.GBP), pairs.saved)
+    }
+
+    @Test
+    fun `a new process restores the last saved pair`() = runTest(dispatcher) {
+        val first = loadedViewModel()
+        first.onToCurrencySelected(Currency.EUR)
+        first.onSwapCurrencies()
+        dispatcher.scheduler.runCurrent()
+
+        // Same store, new ViewModel: what a process restart sees.
+        val second = loadedViewModel()
+
+        assertEquals(Currency.EUR, second.uiState.value.from)
+        assertEquals(Currency.MAD, second.uiState.value.to)
+    }
+
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
         val repository = FakeRepository()
-        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees)
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(rates, isStale = false))
         dispatcher.scheduler.runCurrent()
         return viewModel
+    }
+
+    /** In-memory pair store; gates let a test hold a read or a write to stage a race. */
+    private class FakeCurrencyPairStore : CurrencyPairStore {
+        var saved: CurrencyPair? = null
+        val writes = mutableListOf<CurrencyPair>()
+        var saveCalls = 0
+            private set
+
+        /** When set, [read] waits for it (slow startup read). */
+        var readGate: CompletableDeferred<Unit>? = null
+
+        /** When set, [save] waits for it before writing (slow write). */
+        var saveGate: CompletableDeferred<Unit>? = null
+
+        var failNextSave = false
+
+        var failRead = false
+
+        /** Returns what was stored when the read started, like a slow disk read. */
+        override suspend fun read(): CurrencyPair? {
+            val stored = saved
+            readGate?.await()
+            if (failRead) throw IOException("unreadable")
+            return stored
+        }
+
+        override suspend fun save(pair: CurrencyPair) {
+            saveCalls++
+            saveGate?.await()
+            if (failNextSave) {
+                failNextSave = false
+                throw IOException("disk full")
+            }
+            writes += pair
+            saved = pair
+        }
     }
 
     private class FakeFeePreferenceStore : FeePreferenceStore {

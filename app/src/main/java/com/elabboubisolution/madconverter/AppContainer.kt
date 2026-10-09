@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
+import com.elabboubisolution.madconverter.data.local.CurrencyPairStore
+import com.elabboubisolution.madconverter.data.local.DataStoreCurrencyPairStore
 import com.elabboubisolution.madconverter.data.local.DataStoreFavoritesStore
 import com.elabboubisolution.madconverter.data.local.DataStoreFeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.DataStoreHistoryStore
@@ -52,6 +54,9 @@ class AppContainer(context: Context) {
 
     val feePreferenceStore: FeePreferenceStore =
         DataStoreFeePreferenceStore(context.applicationContext.userPreferencesDataStore)
+
+    val currencyPairStore: CurrencyPairStore =
+        DataStoreCurrencyPairStore(context.applicationContext.userPreferencesDataStore)
 
     val historyStore: HistoryStore = DataStoreHistoryStore(context.applicationContext.historyDataStore, json)
 

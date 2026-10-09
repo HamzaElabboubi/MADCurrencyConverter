@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.elabboubisolution.madconverter.MadConverterApplication
+import com.elabboubisolution.madconverter.data.local.CurrencyPair
+import com.elabboubisolution.madconverter.data.local.CurrencyPairStore
 import com.elabboubisolution.madconverter.data.local.FavoritesStore
 import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
 import com.elabboubisolution.madconverter.data.local.HistoryStore
@@ -27,9 +29,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
 import java.math.BigDecimal
 
 enum class AmountError { INVALID, TOO_LARGE }
@@ -80,10 +85,27 @@ class CurrencyConverterViewModel(
     private val favoritesStore: FavoritesStore,
     private val historyStore: HistoryStore,
     private val feePreferenceStore: FeePreferenceStore,
+    private val currencyPairStore: CurrencyPairStore,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
     val uiState: StateFlow<ConverterUiState> = _uiState.asStateFlow()
+
+    private val _isPairRestored = MutableStateFlow(false)
+
+    /**
+     * True once the startup read of the saved pair has finished (pair applied or none saved).
+     * The activity holds its first frame until then, so the default pair never flashes first.
+     */
+    val isPairRestored: StateFlow<Boolean> = _isPairRestored.asStateFlow()
+
+    /**
+     * Waits until [isPairRestored], at most [timeoutMillis]; returns at once if already restored
+     * (e.g. after a rotation). True if restored in time. On false the caller shows the screen
+     * anyway: the saved pair is applied when the read finishes, unless the user chose one.
+     */
+    suspend fun awaitPairRestored(timeoutMillis: Long): Boolean =
+        withTimeoutOrNull(timeoutMillis) { isPairRestored.first { it } } ?: false
 
     private var snapshot: RateSnapshot? = null
 
@@ -91,8 +113,31 @@ class CurrencyConverterViewModel(
     private var persistedFeePercent: BigDecimal? = null
     private var loadJob: Job? = null
 
+    /**
+     * Set by the first user change of the pair. From then on the in-memory pair is the truth:
+     * a saved pair read later (slow startup) is discarded instead of replacing the user's choice.
+     */
+    private var pairChangedByUser = false
+
+    /**
+     * Latest pair to persist. One collector writes it, so writes happen in order and a slow
+     * write can never land after a newer one; intermediate pairs may be skipped (conflated).
+     * Null until the user changes the pair: startup never writes the default over a saved pair.
+     */
+    private val pairToSave = MutableStateFlow<CurrencyPair?>(null)
+
     init {
         loadRates()
+        restoreSavedPair()
+        viewModelScope.launch {
+            pairToSave.filterNotNull().collect { pair ->
+                try {
+                    currencyPairStore.save(pair)
+                } catch (_: IOException) {
+                    // Not saved: the pair still applies in memory and the next change retries.
+                }
+            }
+        }
         viewModelScope.launch {
             favoritesStore.favorites.collect { favorites -> updateState { it.copy(favorites = favorites) } }
         }
@@ -112,11 +157,11 @@ class CurrencyConverterViewModel(
     }
 
     /** Picking the currency already on the other side swaps the two. */
-    fun onFromCurrencySelected(currency: Currency) = updateState {
+    fun onFromCurrencySelected(currency: Currency) = changePair {
         if (currency == it.to) it.copy(from = currency, to = it.from) else it.copy(from = currency)
     }
 
-    fun onToCurrencySelected(currency: Currency) = updateState {
+    fun onToCurrencySelected(currency: Currency) = changePair {
         if (currency == it.from) it.copy(from = it.to, to = currency) else it.copy(to = currency)
     }
 
@@ -132,7 +177,7 @@ class CurrencyConverterViewModel(
      * Restores the inputs of a past conversion. The result is recalculated from the current
      * rates; the stored historical amount is never shown as today's value.
      */
-    fun onHistoryEntrySelected(entry: HistoryEntry) = updateState {
+    fun onHistoryEntrySelected(entry: HistoryEntry) = changePair {
         it.copy(from = entry.from, to = entry.to, amountInput = entry.amount.toPlainString())
     }
 
@@ -167,13 +212,42 @@ class CurrencyConverterViewModel(
         viewModelScope.launch { historyStore.record(result, wasStale = state.isStale) }
     }
 
-    fun onSwapCurrencies() = updateState { it.copy(from = it.to, to = it.from) }
+    fun onSwapCurrencies() = changePair { it.copy(from = it.to, to = it.from) }
 
     fun onRetry() = loadRates()
 
     fun onToggleFavorite(currency: Currency) {
         val isFavorite = currency in _uiState.value.favorites
         viewModelScope.launch { favoritesStore.setFavorite(currency, !isFavorite) }
+    }
+
+    /** Applies the saved pair unless the user already chose one (see [pairChangedByUser]). */
+    private fun restoreSavedPair() {
+        viewModelScope.launch {
+            try {
+                // Unreadable preferences count as nothing saved: the default pair stays.
+                val saved = try {
+                    currencyPairStore.read()
+                } catch (_: IOException) {
+                    null
+                } ?: return@launch
+                updateState { if (pairChangedByUser) it else it.copy(from = saved.from, to = saved.to) }
+            } finally {
+                _isPairRestored.value = true
+            }
+        }
+    }
+
+    /**
+     * A user change of source and/or target: applied in one state update (no intermediate
+     * pair is ever visible or saved), then queued for saving.
+     */
+    private fun changePair(transform: (ConverterUiState) -> ConverterUiState) {
+        pairChangedByUser = true
+        updateState(transform)
+        val state = _uiState.value
+        // Defensive: a pair is always two currencies, never saved otherwise.
+        if (state.from != state.to) pairToSave.value = CurrencyPair(state.from, state.to)
     }
 
     private fun loadRates() {
@@ -212,6 +286,7 @@ class CurrencyConverterViewModel(
                     app.container.favoritesStore,
                     app.container.historyStore,
                     app.container.feePreferenceStore,
+                    app.container.currencyPairStore,
                 )
             }
         }
