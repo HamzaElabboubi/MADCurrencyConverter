@@ -8,7 +8,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
@@ -16,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -27,15 +30,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.formatDecimal
 import com.elabboubisolution.madconverter.ui.format.localizedName
 import com.elabboubisolution.madconverter.ui.format.ltr
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
+
+/** Smallest size a Quick Conversions amount shrinks to (largest amounts at 200% font size). */
+private val AMOUNT_MIN_FONT_SIZE = 12.sp
 
 /** Secondary list of the amount converted into favorites; tapping a row makes it the main target. */
 @Composable
@@ -67,40 +75,57 @@ private fun QuickConversionRow(conversion: Conversion, onClick: () -> Unit) {
     val amount = formatDecimal(conversion.convertedAmount, minDigits = currency.fractionDigits)
     val description = stringResource(R.string.quick_conversion_description, currency.code, name, amount)
     val clickLabel = stringResource(R.string.action_make_main)
+    // Outer row: the chevron is measured first, so it always keeps its place.
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .clickable(onClickLabel = clickLabel, role = Role.Button, onClick = onClick)
             .semantics { contentDescription = description }
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(start = Dimens.CardPadding, top = 10.dp, end = 8.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = currency.code,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier
-                .widthIn(min = 40.dp)
-                .clearAndSetSemantics {},
-        )
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .clearAndSetSemantics {},
-        )
-        // The amount never shrinks: the name gives way first.
-        Text(
-            text = ltr(stringResource(R.string.approx_amount, amount)),
-            style = MaterialTheme.typography.bodyLarge.tabularFigures(),
-            maxLines = 1,
-            modifier = Modifier.clearAndSetSemantics {},
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = currency.code,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .widthIn(min = 40.dp)
+                    .clearAndSetSemantics {},
+            )
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .clearAndSetSemantics {},
+            )
+            // The name gives way first. Only when the amount alone does not fit (huge amounts
+            // at large font sizes) does it shrink, on one line: never clipped or split.
+            val amountStyle = MaterialTheme.typography.bodyLarge.tabularFigures()
+            Text(
+                text = ltr(stringResource(R.string.approx_amount, amount)),
+                style = amountStyle,
+                maxLines = 1,
+                autoSize = TextAutoSize.StepBased(minFontSize = AMOUNT_MIN_FONT_SIZE, maxFontSize = amountStyle.fontSize),
+                modifier = Modifier.clearAndSetSemantics {},
+            )
+        }
+        // Tapping makes this the main target. Decorative only: the row already announces
+        // its action ("Make main conversion"). Auto-mirrored, so it points to the end in RTL.
+        Icon(
+            painter = painterResource(R.drawable.ic_chevron_right),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

@@ -148,7 +148,21 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Strings in English, French and Arabic. In RTL the icon and text mirror, and Retry stays at the end. Spinner wording ("Loading exchange rates…") does not claim a network download.
 - Verified: 224 unit tests passing, clean build, lint 0 errors; six UI scenarios checked visually in English, French and Arabic.
 
+### Component Spacing and Visual Consistency (Phase 12.6)
+
+- Presentation only: no changes to calculations, API, caching, DataStore, History recording, favorites or AdMob.
+- `ui/theme/Dimens.kt` holds the shared 16dp values: `EdgePadding` (screen and every sheet), `CardPadding` (inside cards) and `SectionSpacing` (between screen sections). Use them instead of new literal edge/padding values.
+- One alignment line: main content, cards, the History/picker/Real Cost sheet titles, section headers, the search field and list rows all start at 16dp, matching the top bar title and Material `ListItem`. In the result card the "Real cost" label lines up with the amounts (the actions row starts 12dp further out, to offset the `TextButton`'s own padding). History's "Clear all" text sits on the 16dp end edge.
+- Quick Conversions rows end with a decorative chevron (`ic_chevron_right`, `android:autoMirrored="true"`, so it points to the end and flips in RTL). It has no content description: the row still announces its "Make main conversion" action, and its click/semantics are unchanged. The chevron sits in an outer row and is measured first, so it is never squeezed out.
+- Quick Conversion amounts never clip: the name gives way first, and only when the amount alone doesn't fit (e.g. `≈ 15,928,259,999,984` JPY at 200%) does it shrink on one line (`TextAutoSize.StepBased`, min 12sp).
+- Real Cost total: it sits in a `primaryContainer` box (same pairing as the result card), with a `titleMedium` label and a `titleLarge` amount, baseline-aligned. The converted/fee lines above it stay plain, with `onSurfaceVariant` labels. The Phase 12.3 rule is kept (the amount moves below its label when the label would drop under 120dp). In that stacked layout the amount shrinks on one line if even a full line is too narrow, so the total is never clipped.
+- `DirectionalIconsTest` checks that the chevron stays auto-mirrored.
+- Verified: clean build, 225 unit tests passing, lint 0 errors (4 existing version warnings), no Kotlin warnings. Before/after checks on the emulator: English (light, 100% and 200%), Arabic RTL (dark, 200%), French (light, 150%), with normal and very large amounts. No clipped labels or amounts, rows keep their 48dp minimum height, nothing draws under the top bar or the AdMob banner. Live TalkBack testing is still deferred to Phase 12.8.
+
 ## Known issues
+
+- **Rotation during a no-cache Retry (open, not fixed):** `ConversionSection` keeps the last error in `remember`, which a configuration change clears. If the device rotates while a Retry runs with no cached rates, the loading placeholder replaces the error card with its spinner. The network request continues. This is an existing presentation limitation.
+- **Cache-read failure during a failed Retry (open, not fixed, investigate before Google Play release):** if rates are already on screen and a Retry then fails while the cache read also returns nothing, the repository returns `Unavailable`. The ViewModel keeps the old snapshot and sets `error`, but leaves `isStale` unchanged, so those rates can stay visible without a stale warning. This is an existing ViewModel/state-management issue.
 
 - **Phase 12.5 limitations (open, not fixed):**
   - A missing-currency Retry while the cache is still valid (last download under an hour ago) can briefly show the spinner while the repository reads DataStore, with no network request. Accepted: the ViewModel load is genuine and the text doesn't promise a download.

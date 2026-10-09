@@ -73,6 +73,7 @@ import com.elabboubisolution.madconverter.ui.components.SwapButton
 import com.elabboubisolution.madconverter.ui.components.ratePanel
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.message
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.viewmodel.AmountError
 import com.elabboubisolution.madconverter.viewmodel.ConverterUiState
@@ -197,8 +198,8 @@ fun CurrencyConverterContent(
                 modifier = Modifier
                     .widthIn(max = 560.dp)
                     .fillMaxWidth()
-                    .padding(start = 20.dp, top = 8.dp, end = 20.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp),
+                    .padding(start = Dimens.EdgePadding, top = 8.dp, end = Dimens.EdgePadding, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(Dimens.SectionSpacing),
             ) {
                 AmountField(
                     value = state.amountInput,
@@ -334,7 +335,7 @@ private fun ConversionSection(
         is RatePanel.Available -> p
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(Dimens.SectionSpacing)) {
         if (panel.isStale) {
             StaleRateBanner(
                 reason = panel.refreshError?.message(),

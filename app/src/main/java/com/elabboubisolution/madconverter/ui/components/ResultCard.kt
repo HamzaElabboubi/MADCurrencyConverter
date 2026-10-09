@@ -30,6 +30,7 @@ import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.ltr
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
@@ -50,10 +51,12 @@ fun ResultCard(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
     ) {
-        Column(modifier = Modifier.padding(start = 20.dp, top = 20.dp, end = 8.dp, bottom = 8.dp)) {
+        // The actions row starts 12dp further out, so the "Real cost" label (inside the
+        // TextButton's 12dp padding) lines up with the amounts at the 16dp card edge.
+        Column(modifier = Modifier.padding(start = 4.dp, top = Dimens.CardPadding, end = 8.dp, bottom = 8.dp)) {
             Column(
                 modifier = Modifier
-                    .padding(end = 12.dp)
+                    .padding(start = Dimens.CardPadding - 4.dp, end = 12.dp)
                     .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
             ) {
                 Text(

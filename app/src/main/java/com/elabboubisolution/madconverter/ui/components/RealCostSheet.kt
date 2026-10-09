@@ -1,6 +1,7 @@
 package com.elabboubisolution.madconverter.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -13,10 +14,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +45,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.domain.Conversion
 import com.elabboubisolution.madconverter.domain.FeeInput
@@ -53,6 +57,7 @@ import com.elabboubisolution.madconverter.ui.format.PERCENT_SIGN
 import com.elabboubisolution.madconverter.ui.format.formatPercent
 import com.elabboubisolution.madconverter.ui.format.ltr
 import com.elabboubisolution.madconverter.ui.format.normalizeNumericInput
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.ui.theme.tabularFigures
 import java.math.BigDecimal
@@ -107,7 +112,7 @@ fun RealCostContent(
             .imePadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            .padding(start = Dimens.EdgePadding, end = Dimens.EdgePadding, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(
@@ -205,12 +210,24 @@ private fun RealCostBreakdown(estimate: RealCostEstimate) {
             label = stringResource(R.string.real_cost_fee, percent),
             value = ltr(ConversionText.money(estimate.fee, estimate.currency)),
         )
-        HorizontalDivider()
-        BreakdownRow(
-            label = stringResource(R.string.real_cost_total),
-            value = ltr(ConversionText.money(estimate.total, estimate.currency)),
-            emphasized = true,
-        )
+        // The total is the answer: set apart like the main result card, the breakdown above
+        // stays plain and subordinate.
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            shape = CardDefaults.shape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+            Box(modifier = Modifier.padding(Dimens.CardPadding)) {
+                BreakdownRow(
+                    label = stringResource(R.string.real_cost_total),
+                    value = ltr(ConversionText.money(estimate.total, estimate.currency)),
+                    emphasized = true,
+                )
+            }
+        }
     }
 }
 
@@ -218,12 +235,19 @@ private fun RealCostBreakdown(estimate: RealCostEstimate) {
 private val MIN_LABEL_WIDTH = 120.dp
 private val LABEL_GAP = 12.dp
 
+/** Smallest size an amount shrinks to when it does not fit on its own line. */
+private val VALUE_MIN_FONT_SIZE = 12.sp
+
 @Composable
 private fun BreakdownRow(label: String, value: String, emphasized: Boolean = false) {
+    // Total: titleMedium label, titleLarge amount, in the container's color. Breakdown: body
+    // text with secondary-colored labels.
     val baseStyle = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge
     val weight = if (emphasized) FontWeight.SemiBold else baseStyle.fontWeight
-    val labelStyle = baseStyle.copy(fontWeight = weight)
-    val valueStyle = baseStyle.tabularFigures().copy(fontWeight = weight)
+    val labelColor = if (emphasized) LocalContentColor.current else MaterialTheme.colorScheme.onSurfaceVariant
+    val labelStyle = baseStyle.copy(fontWeight = weight, color = labelColor)
+    val valueBase = if (emphasized) MaterialTheme.typography.titleLarge else baseStyle
+    val valueStyle = valueBase.tabularFigures().copy(fontWeight = weight, color = LocalContentColor.current)
     val measurer = rememberTextMeasurer()
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         // The amount never wraps. Beside a label that keeps a readable width when it fits;
@@ -232,20 +256,27 @@ private fun BreakdownRow(label: String, value: String, emphasized: Boolean = fal
             measurer.measure(value, valueStyle, maxLines = 1).size.width.toDp()
         }
         if (valueWidth + LABEL_GAP + MIN_LABEL_WIDTH <= maxWidth) {
-            Row(
-                verticalAlignment = Alignment.Top,
-                horizontalArrangement = Arrangement.spacedBy(LABEL_GAP),
-            ) {
-                Text(text = label, style = labelStyle, modifier = Modifier.weight(1f))
-                Text(text = value, style = valueStyle, maxLines = 1)
+            // First baselines aligned: the total's label and amount differ in size.
+            Row(horizontalArrangement = Arrangement.spacedBy(LABEL_GAP)) {
+                Text(
+                    text = label,
+                    style = labelStyle,
+                    modifier = Modifier
+                        .weight(1f)
+                        .alignByBaseline(),
+                )
+                Text(text = value, style = valueStyle, maxLines = 1, modifier = Modifier.alignByBaseline())
             }
         } else {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(text = label, style = labelStyle)
+                // Shrinks only if even a full line is too narrow (the total's larger style,
+                // huge amounts, 200% font size): never clipped.
                 Text(
                     text = value,
                     style = valueStyle,
                     maxLines = 1,
+                    autoSize = TextAutoSize.StepBased(minFontSize = VALUE_MIN_FONT_SIZE, maxFontSize = valueStyle.fontSize),
                     modifier = Modifier.align(Alignment.End),
                 )
             }

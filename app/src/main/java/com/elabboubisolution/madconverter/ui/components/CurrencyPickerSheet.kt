@@ -56,6 +56,7 @@ import com.elabboubisolution.madconverter.domain.CurrencySearch
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.ui.format.currentLocale
 import com.elabboubisolution.madconverter.ui.format.localizedName
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import kotlinx.coroutines.launch
 
@@ -107,7 +108,7 @@ fun CurrencyPickerContent(
             text = title,
             style = MaterialTheme.typography.titleLarge,
             modifier = Modifier
-                .padding(horizontal = 24.dp)
+                .padding(horizontal = Dimens.EdgePadding)
                 .semantics { heading() },
         )
         OutlinedTextField(
@@ -115,7 +116,7 @@ fun CurrencyPickerContent(
             onValueChange = { query = it },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = Dimens.EdgePadding, vertical = 12.dp),
             placeholder = { Text(stringResource(R.string.search_currency_hint)) },
             leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
             trailingIcon = if (query.isNotEmpty()) {
@@ -137,7 +138,7 @@ fun CurrencyPickerContent(
                 text = stringResource(R.string.no_currency_found, query.trim()),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
+                modifier = Modifier.padding(horizontal = Dimens.EdgePadding, vertical = 16.dp),
             )
         }
 
@@ -172,7 +173,7 @@ private fun SectionHeader(text: String) {
         style = MaterialTheme.typography.labelLarge,
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier
-            .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 4.dp)
+            .padding(start = Dimens.EdgePadding, end = Dimens.EdgePadding, top = 12.dp, bottom = 4.dp)
             .semantics { heading() },
     )
 }

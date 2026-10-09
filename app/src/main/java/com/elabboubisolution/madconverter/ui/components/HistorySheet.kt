@@ -46,6 +46,7 @@ import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.formatHistoryTimestamp
 import com.elabboubisolution.madconverter.ui.format.ltr
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 import com.elabboubisolution.madconverter.ui.theme.extendedColors
 import com.elabboubisolution.madconverter.ui.theme.tabularFigures
@@ -92,7 +93,8 @@ fun HistoryContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 12.dp),
+                // Title on the rows' 16dp edge; "Clear all" text (12dp inside its button) on the 16dp end edge.
+                .padding(start = Dimens.EdgePadding, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(

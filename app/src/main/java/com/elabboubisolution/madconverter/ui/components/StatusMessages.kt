@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
+import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
 
 /** About the height of the result card, so the screen does not jump when rates arrive. */
@@ -54,7 +55,7 @@ fun LoadingState(modifier: Modifier = Modifier) {
     ) {
         Row(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(Dimens.CardPadding)
                 .semantics(mergeDescendants = true) {},
             horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
