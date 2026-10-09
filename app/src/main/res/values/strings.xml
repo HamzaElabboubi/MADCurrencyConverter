@@ -17,6 +17,8 @@
 
     <string name="loading_rates">Loading exchange rates…</string>
     <string name="retry">Retry</string>
+    <!-- TalkBack action on the rate-provider attribution ("Double-tap to …"). -->
+    <string name="open_website">open website</string>
     <string name="rates_unavailable_title">Exchange rates couldn\'t be loaded</string>
     <string name="error_no_connection">No internet connection. Check your connection and try again.</string>
     <string name="error_timeout">The rate service took too long to respond.</string>
@@ -37,9 +39,7 @@
     <string name="all_currencies_header">All currencies</string>
     <string name="other_currencies_header">Other currencies</string>
     <string name="no_currency_found">No currency matches “%1$s”</string>
-    <string name="add_favorite">Add %1$s to favorites</string>
-    <string name="remove_favorite">Remove %1$s from favorites</string>
-    <string name="selected_currency">Selected</string>
+    <string name="favorite_currency">Favorite: %1$s</string>
 
     <string name="quick_conversions_title">Quick conversions</string>
     <string name="approx_amount" translatable="false">≈ %1$s</string>
@@ -60,6 +60,7 @@
     <string name="history_clear_confirm">Clear</string>
     <string name="cancel">Cancel</string>
     <string name="history_delete_entry">Delete %1$s</string>
+    <string name="history_conversion">conversion %1$s to %2$s</string>
     <string name="history_empty_title">No conversions yet</string>
     <string name="history_empty_message">Conversions you copy or share will appear here.</string>
     <string name="history_stale_rate">Saved rate may not have been current</string>

@@ -20,8 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,7 +39,11 @@ import java.math.BigDecimal
 /** Smallest size the main result shrinks to; small enough for the largest amounts at 200% font size. */
 private val RESULT_MIN_FONT_SIZE = 12.sp
 
-/** Main result, with Copy and Share actions (the only actions that record history). */
+/**
+ * Main result, with Copy and Share actions (the only actions that record history).
+ * [typedAmount] is the raw amount text: each keystroke (even "1000" -> "1000.") delays the
+ * screen-reader announcement until typing pauses.
+ */
 @Composable
 fun ResultCard(
     conversion: Conversion,
@@ -46,6 +51,7 @@ fun ResultCard(
     onShare: () -> Unit,
     modifier: Modifier = Modifier,
     onRealCost: (() -> Unit)? = null,
+    typedAmount: String = conversion.amount.toPlainString(),
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -54,13 +60,24 @@ fun ResultCard(
         // The actions row starts 12dp further out, so the "Real cost" label (inside the
         // TextButton's 12dp padding) lines up with the amounts at the 16dp card edge.
         Column(modifier = Modifier.padding(start = 4.dp, top = Dimens.CardPadding, end = 8.dp, bottom = 8.dp)) {
+            val sourceText = ltr(ConversionText.amount(conversion.amount, conversion.from))
+            val resultText = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to))
+            // One item with the current result, readable at any time. It becomes a live region only
+            // once the result has settled (typing paused), so TalkBack announces it then, once,
+            // not on every keystroke. Full width: a live region whose bounds change is re-read.
+            val spoken = "$sourceText, $resultText"
+            val live = rememberLiveWhenSettled(spoken, typingKey = typedAmount)
             Column(
                 modifier = Modifier
+                    .fillMaxWidth()
                     .padding(start = Dimens.CardPadding - 4.dp, end = 12.dp)
-                    .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                    .clearAndSetSemantics {
+                        contentDescription = spoken
+                        if (live) liveRegion = LiveRegionMode.Polite
+                    },
             ) {
                 Text(
-                    text = ltr(ConversionText.amount(conversion.amount, conversion.from)),
+                    text = sourceText,
                     style = MaterialTheme.typography.titleMedium.tabularFigures(),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
@@ -68,7 +85,7 @@ fun ResultCard(
                 // (e.g. "100,305,000,000." / "00 USD" at 200% font size).
                 val resultStyle = MaterialTheme.typography.displaySmall.tabularFigures()
                 Text(
-                    text = ltr(ConversionText.approximate(conversion.convertedAmount, conversion.to)),
+                    text = resultText,
                     style = resultStyle,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,

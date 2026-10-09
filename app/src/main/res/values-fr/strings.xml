@@ -14,6 +14,8 @@
 
     <string name="loading_rates">Chargement des taux de change…</string>
     <string name="retry">Réessayer</string>
+    <!-- TalkBack action on the rate-provider attribution ("Double-tap to …"). -->
+    <string name="open_website">ouvrir le site web</string>
     <string name="rates_unavailable_title">Impossible de charger les taux de change</string>
     <string name="error_no_connection">Pas de connexion Internet. Vérifiez votre connexion et réessayez.</string>
     <string name="error_timeout">Le service de taux a mis trop de temps à répondre.</string>
@@ -34,9 +36,7 @@
     <string name="all_currencies_header">Toutes les devises</string>
     <string name="other_currencies_header">Autres devises</string>
     <string name="no_currency_found">Aucune devise ne correspond à « %1$s »</string>
-    <string name="add_favorite">Ajouter %1$s aux favoris</string>
-    <string name="remove_favorite">Retirer %1$s des favoris</string>
-    <string name="selected_currency">Sélectionnée</string>
+    <string name="favorite_currency">Favori : %1$s</string>
 
     <string name="quick_conversions_title">Conversions rapides</string>
     <string name="quick_conversion_description">%1$s, %2$s : environ %3$s</string>
@@ -56,6 +56,7 @@
     <string name="history_clear_confirm">Effacer</string>
     <string name="cancel">Annuler</string>
     <string name="history_delete_entry">Supprimer %1$s</string>
+    <string name="history_conversion">la conversion %1$s en %2$s</string>
     <string name="history_empty_title">Aucune conversion pour l\'instant</string>
     <string name="history_empty_message">Les conversions que vous copiez ou partagez apparaîtront ici.</string>
     <string name="history_stale_rate">Taux enregistré possiblement non à jour</string>

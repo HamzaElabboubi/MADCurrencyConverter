@@ -21,12 +21,18 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -36,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
 import com.elabboubisolution.madconverter.ui.theme.Dimens
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
+import kotlinx.coroutines.delay
 
 /** About the height of the result card, so the screen does not jump when rates arrive. */
 private val LOADING_PLACEHOLDER_MIN_HEIGHT = 144.dp
@@ -110,6 +117,21 @@ internal fun StatusCard(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor),
     ) {
+        val loading = stringResource(R.string.loading_rates)
+        // While retrying, the live region says so; afterwards it reads the message again. So a
+        // Retry is announced, and a retry that fails with the same error is announced again.
+        // "Loading" is held for ANNOUNCE_SETTLE_MILLIS: an instant failure (offline) would
+        // otherwise reach TalkBack as two changes both reading the error, i.e. twice.
+        var announceLoading by remember { mutableStateOf(false) }
+        LaunchedEffect(isRetrying) {
+            if (isRetrying) {
+                announceLoading = true
+            } else if (announceLoading) {
+                delay(ANNOUNCE_SETTLE_MILLIS)
+                announceLoading = false
+            }
+        }
+        val spoken = if (announceLoading) loading else listOfNotNull(title, message).joinToString(", ")
         Column(modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 12.dp, bottom = 4.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(
@@ -121,7 +143,10 @@ internal fun StatusCard(
                     modifier = Modifier
                         .weight(1f)
                         .padding(end = 8.dp)
-                        .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+                        .clearAndSetSemantics {
+                            contentDescription = spoken
+                            liveRegion = LiveRegionMode.Polite
+                        },
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     if (title != null) {
@@ -134,7 +159,6 @@ internal fun StatusCard(
                 }
             }
             if (onRetry != null) {
-                val loading = stringResource(R.string.loading_rates)
                 Box(
                     modifier = Modifier
                         .align(Alignment.End)
@@ -142,11 +166,12 @@ internal fun StatusCard(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (isRetrying) {
+                        // No description of its own: "Loading exchange rates" is already announced
+                        // by the card; TalkBack reads this as "In progress, Progress bar".
                         CircularProgressIndicator(
                             modifier = Modifier
                                 .padding(horizontal = 12.dp)
-                                .size(24.dp)
-                                .semantics { contentDescription = loading },
+                                .size(24.dp),
                             color = contentColor,
                             strokeWidth = 3.dp,
                         )

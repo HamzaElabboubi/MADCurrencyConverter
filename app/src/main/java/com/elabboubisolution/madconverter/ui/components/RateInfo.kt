@@ -1,20 +1,18 @@
 package com.elabboubisolution.madconverter.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
 import com.elabboubisolution.madconverter.R
@@ -53,21 +51,29 @@ fun RateInfo(
     }
 }
 
+/**
+ * The attribution ExchangeRate-API requires, linking to its site. A clickable text rather than an
+ * inline link: TalkBack then offers it as an action ("Double-tap to open website"), and the touch
+ * target is at least 48dp tall (the text stays at the top, the extra height below it).
+ */
 @Composable
 private fun ProviderAttribution() {
-    val linkStyles = TextLinkStyles(
-        style = SpanStyle(
-            color = MaterialTheme.colorScheme.primary,
-            textDecoration = TextDecoration.Underline,
-        )
+    val uriHandler = LocalUriHandler.current
+    Text(
+        text = stringResource(R.string.attribution),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary,
+        textDecoration = TextDecoration.Underline,
+        modifier = Modifier
+            .clickable(onClickLabel = stringResource(R.string.open_website)) {
+                // No browser installed: nothing to open, but never crash.
+                runCatching { uriHandler.openUri(PROVIDER_URL) }
+            }
+            .heightIn(min = MIN_TOUCH_TARGET),
     )
-    val text = buildAnnotatedString {
-        withLink(LinkAnnotation.Url(PROVIDER_URL, linkStyles)) {
-            append(stringResource(R.string.attribution))
-        }
-    }
-    Text(text = text, style = MaterialTheme.typography.bodySmall)
 }
+
+private val MIN_TOUCH_TARGET = 48.dp
 
 @PreviewLightDark
 @Composable

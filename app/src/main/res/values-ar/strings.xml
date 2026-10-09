@@ -12,6 +12,8 @@
     <string name="yesterday_at">أمس، %1$s</string>
     <string name="loading_rates">جارٍ تحميل أسعار الصرف…</string>
     <string name="retry">إعادة المحاولة</string>
+    <!-- TalkBack action on the rate-provider attribution ("Double-tap to …"). -->
+    <string name="open_website">فتح الموقع الإلكتروني</string>
     <string name="rates_unavailable_title">تعذّر تحميل أسعار الصرف</string>
     <string name="error_no_connection">لا يوجد اتصال بالإنترنت. تحقّق من اتصالك ثم أعد المحاولة.</string>
     <string name="error_timeout">استغرقت خدمة أسعار الصرف وقتًا طويلًا للاستجابة.</string>
@@ -32,9 +34,7 @@
     <string name="all_currencies_header">جميع العملات</string>
     <string name="other_currencies_header">عملات أخرى</string>
     <string name="no_currency_found">لا توجد عملة تطابق «%1$s»</string>
-    <string name="add_favorite">إضافة %1$s إلى المفضّلة</string>
-    <string name="remove_favorite">إزالة %1$s من المفضّلة</string>
-    <string name="selected_currency">محدّدة</string>
+    <string name="favorite_currency">مفضّلة: %1$s</string>
     <string name="quick_conversions_title">تحويلات سريعة</string>
     <string name="quick_conversion_description">%1$s، %2$s: حوالي %3$s</string>
     <string name="action_make_main">اجعله التحويل الرئيسي</string>
@@ -52,6 +52,7 @@
     <string name="history_clear_confirm">مسح</string>
     <string name="cancel">إلغاء</string>
     <string name="history_delete_entry">حذف %1$s</string>
+    <string name="history_conversion">تحويل %1$s إلى %2$s</string>
     <string name="history_empty_title">لا توجد تحويلات بعد</string>
     <string name="history_empty_message">ستظهر هنا التحويلات التي تنسخها أو تشاركها.</string>
     <string name="history_stale_rate">ربما لم يكن السعر المحفوظ محدّثًا</string>

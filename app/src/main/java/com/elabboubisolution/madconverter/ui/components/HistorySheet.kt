@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -145,19 +146,29 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
     val target = ConversionText.money(entry.convertedAmount, entry.to)
     val time = formatHistoryTimestamp(entry.timestampMillis)
     val conversionLabel = ltr("$source → $target")
-    val description = stringResource(R.string.history_entry_description, source, target, time)
+    val staleNote = stringResource(R.string.history_stale_rate)
+    // The row is read as one sentence; the visible texts below are hidden from TalkBack so it is
+    // not read twice. The stale-rate note is part of it.
+    val description = listOfNotNull(
+        stringResource(R.string.history_entry_description, source, target, time),
+        staleNote.takeIf { entry.wasStale },
+    ).joinToString(". ")
     val clickLabel = stringResource(R.string.action_convert_again)
     ListItem(
         headlineContent = {
             // Never truncated: a cut-off amount would be misleading.
-            Text(conversionLabel, style = MaterialTheme.typography.bodyLarge.tabularFigures())
+            Text(
+                conversionLabel,
+                style = MaterialTheme.typography.bodyLarge.tabularFigures(),
+                modifier = Modifier.clearAndSetSemantics {},
+            )
         },
         supportingContent = {
-            Column {
+            Column(modifier = Modifier.clearAndSetSemantics {}) {
                 Text(time)
                 if (entry.wasStale) {
                     Text(
-                        text = stringResource(R.string.history_stale_rate),
+                        text = staleNote,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.extendedColors.warning,
                     )
@@ -168,7 +179,8 @@ private fun HistoryRow(entry: HistoryEntry, onClick: () -> Unit, onDelete: () ->
             IconButton(onClick = onDelete) {
                 Icon(
                     painterResource(R.drawable.ic_delete),
-                    stringResource(R.string.history_delete_entry, "$source → $target"),
+                    // Words, not "→", so it reads naturally.
+                    stringResource(R.string.history_delete_entry, stringResource(R.string.history_conversion, source, target)),
                 )
             }
         },

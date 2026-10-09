@@ -357,6 +357,7 @@ private fun ConversionSection(
                 onCopy = { onCopy(state.result) },
                 onShare = { onShare(state.result) },
                 onRealCost = onRealCost,
+                typedAmount = state.amountInput,
             )
             // Invalid or too-large amounts are explained under the field itself.
             state.amountError == null -> HintMessage(stringResource(R.string.enter_amount_hint))

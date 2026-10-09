@@ -36,7 +36,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -187,7 +191,8 @@ fun RealCostContent(
         }
 
         if (showBreakdown) {
-            RealCostBreakdown(estimate)
+            // While a custom fee is typed, the total is announced after a typing pause.
+            RealCostBreakdown(estimate, typingKey = if (customMode) customText else null)
         }
 
         Text(
@@ -199,7 +204,7 @@ fun RealCostContent(
 }
 
 @Composable
-private fun RealCostBreakdown(estimate: RealCostEstimate) {
+private fun RealCostBreakdown(estimate: RealCostEstimate, typingKey: Any?) {
     val percent = ltr(formatPercent(estimate.feePercent))
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BreakdownRow(
@@ -225,6 +230,8 @@ private fun RealCostBreakdown(estimate: RealCostEstimate) {
                     label = stringResource(R.string.real_cost_total),
                     value = ltr(ConversionText.money(estimate.total, estimate.currency)),
                     emphasized = true,
+                    announceChanges = true,
+                    typingKey = typingKey,
                 )
             }
         }
@@ -238,8 +245,19 @@ private val LABEL_GAP = 12.dp
 /** Smallest size an amount shrinks to when it does not fit on its own line. */
 private val VALUE_MIN_FONT_SIZE = 12.sp
 
+/**
+ * One label/amount line, read by TalkBack as one item ("Estimated total, 103.47 USD").
+ * With [announceChanges], a settled new value (a new fee) is also announced, once, not while a
+ * custom fee is being typed.
+ */
 @Composable
-private fun BreakdownRow(label: String, value: String, emphasized: Boolean = false) {
+private fun BreakdownRow(
+    label: String,
+    value: String,
+    emphasized: Boolean = false,
+    announceChanges: Boolean = false,
+    typingKey: Any? = null,
+) {
     // Total: titleMedium label, titleLarge amount, in the container's color. Breakdown: body
     // text with secondary-colored labels.
     val baseStyle = if (emphasized) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge
@@ -249,7 +267,19 @@ private fun BreakdownRow(label: String, value: String, emphasized: Boolean = fal
     val valueBase = if (emphasized) MaterialTheme.typography.titleLarge else baseStyle
     val valueStyle = valueBase.tabularFigures().copy(fontWeight = weight, color = LocalContentColor.current)
     val measurer = rememberTextMeasurer()
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+    val line = "$label, $value"
+    // Not live when (re)appearing, e.g. on the first digit of a custom fee typed after clearing it.
+    val live = announceChanges && rememberLiveWhenSettled(line, typingKey)
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Set here, outside the subcomposition, so the line is one item in the reading order,
+            // always readable with its current value.
+            .clearAndSetSemantics {
+                contentDescription = line
+                if (live) liveRegion = LiveRegionMode.Polite
+            },
+    ) {
         // The amount never wraps. Beside a label that keeps a readable width when it fits;
         // otherwise (huge amounts, large font sizes) below the label, end-aligned.
         val valueWidth = with(LocalDensity.current) {

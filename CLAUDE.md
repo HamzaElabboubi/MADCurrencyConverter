@@ -172,8 +172,50 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Tests: `CurrencyPairStoreTest` (real DataStore: restart, last write wins, invalid/partial/identical codes, read failure, favorites/fee/unknown keys preserved) and `CurrencyConverterViewModelTest` (every persisted action, no writes from other actions, late read vs user change, rapid changes, slow write vs newer pair, failed write, process recreation, and the startup wait on virtual time: immediate, fast read, exactly 500ms limit then late restore, read failure, rotation). The race tests were checked against broken variants (no guard, fire-and-forget writes, no catch) and fail on them.
 - Verified: 254 unit tests passing, clean build, lint 0 errors (4 existing version warnings). On the emulator, the pair is restored after process restarts (new PID) for selection, swap, History restore and Quick Conversion, in English and Arabic RTL, and offline. It is kept across rotation, including rotation during startup. Cold-start frame captures in light and dark mode show the saved pair on the first drawn frame, with no white flash. `am start -W` startup: before 1.16–1.50s (median ≈1.23s), after 1.17–1.37s (median ≈1.24–1.30s), within emulator noise.
 
+## Accessibility and TalkBack Validation (Phase 12.8)
+
+- Presentation and semantics only: no changes to calculations, caching, retry policy, pair persistence, History recording, favorites, Real Cost math, AdMob or the approved visual design.
+- Audit findings, each confirmed with real TalkBack speech before fixing:
+  1. The result was announced on almost every keystroke (3 times while typing "1000").
+  2. Picker: the selected row said "Selected" twice (radio state + check icon description).
+  3. Picker: the favorite star's label described an action that flipped with its state ("checked, Remove MAD from favorites").
+  4. History: each row was read twice (its description, then its visible text).
+  5. History: the delete label contained "→".
+  6. Real Cost: swiping skipped the breakdown, total and disclaimer (rows inside `BoxWithConstraints`), and label and amount were separate items.
+  7. Retry gave no feedback: offline, the same error silently came back.
+- Corrections:
+  - Picker: the check icon is decorative; the star is `IconToggleButton` with a fixed name (`favorite_currency`, "Favorite: EUR") and checked / not checked as its state.
+  - History: the visible texts are hidden from TalkBack, so each row is read once from its description, which includes the stale-rate note. Delete reads "Delete conversion 100 MAD to 10.05 USD" (`history_conversion`).
+  - Real Cost: each line is one item ("label, amount"), with semantics set on the `BoxWithConstraints` node (outside the subcomposition), so it sits in the reading order.
+  - Retry: while retrying, the card's live text is "Loading exchange rates…" (held for at least 1s), then the message again, so a failed retry repeats the error once. The spinner has no description of its own, so "Loading" is said once; TalkBack reads it as "In progress, Progress bar".
+- Settled-result announcements (`ui/components/Announcements.kt`, `rememberLiveWhenSettled`), used by the result card and the Real Cost total:
+  - The node always holds its current text, so the result is readable as soon as it is shown.
+  - Only the live region is switched: off in the same frame as any change, and on once the value has been unchanged for the pause. TalkBack announces a live region being switched on, once, with its current text.
+  - Pauses: 2.5s (`TYPING_SETTLE_MILLIS`) after typing, keyed on the raw typed text so "1000" → "1000." counts; 1s (`ANNOUNCE_SETTLE_MILLIS`) after other changes (swap, currency, Quick Conversion, History restore, fee preset).
+  - Intermediate keystrokes are never announced, and a node appearing is not live yet (the first digit is silent).
+  - The result node is full width: a live region whose bounds change is re-read by TalkBack.
+  - Rejected approaches: changing the live text after a delay (made the result unreachable during the pause), and a separate zero-size announcer (Compose drops zero-size nodes from the accessibility tree).
+- Rate-provider attribution (`RateInfo`): a clickable text, no longer an inline link. Same text, color, underline and destination. TalkBack action label `open_website` ("Double-tap to open website"). Touch target at least 48dp tall (`heightIn`), with the text at the top and the extra height (about 32dp) below. Opening the URL is wrapped so a missing browser cannot crash the app.
+- Strings in English, French and Arabic: added `favorite_currency`, `history_conversion` and `open_website`; removed `add_favorite`, `remove_favorite` and `selected_currency`.
+- Verification, by method:
+  - **Actual TalkBack speech**, captured from TalkBack 16's verbose log (`Actors: act() … SPEAK`). Navigation used explore taps and swipes through the emulator's virtual touchscreen (`adb emu event mouse`). Plain `adb input` taps and keys bypass TalkBack, and `uiautomator dump` restarts it.
+    - Checked: main screen order and labels, typing (one announcement), immediate reading of the result after the first digit, swap, Quick Conversions, picker and favorites, History, Real Cost (open, preset, custom fee), attribution, offline Retry and online recovery, 200% font.
+    - Languages: English, French and Arabic RTL (From → Swap → To order).
+  - **Semantics tests:** `AccessibilitySemanticsTest` (14 instrumented tests) covers names, roles, actions, states, decorative icons, live regions and announcement timing on virtual time, plus the attribution's 48dp height, click label and a click below the visible text.
+  - **Direct-tap activation:** controls were activated with direct `adb` taps, not TalkBack double-taps. The attribution's lower touch area was checked this way: it opened the browser.
+- Results: 254/254 unit tests, 14/14 instrumented tests in the final round (15/15 in the earlier full run, including the existing ones), clean `assembleDebug`, lint 0 errors (2 version warnings, run offline).
+- Testing note: `connectedDebugAndroidTest` uninstalls the app when it finishes, which erases its data on the device (History, favorites, fee, pair, rate cache).
+
 ## Known issues
 
+- **Phase 12.8 accessibility limitations (open, not fixed):**
+  - A result or Real Cost total that TalkBack is focused on is read again when its live region switches on after the pause. Compose does not expose TalkBack focus, so the app cannot skip it.
+  - A successful Retry has no explicit spoken confirmation; focus simply moves on once the card disappears.
+  - The attribution is actionable ("Double-tap to open website") but TalkBack does not call it a link: Compose has no link role.
+  - TalkBack double-tap activation was not verified; actions were activated with direct taps.
+  - French and Arabic pronunciation was not evaluated by listening; the emulator's system language (and TalkBack's own words) was English.
+  - Combined phrases ("amount, result", "label, amount") use a Latin comma as the pause, also in Arabic.
+  - The AdMob banner's accessibility is controlled by the advertising SDK.
 - **Phase 12.7 limitations (open, not fixed):**
   - If restoring the saved pair takes longer than 500ms, the default MAD → USD can briefly appear before the saved pair replaces it (unless the user has chosen a pair meanwhile). Only covered by virtual-time tests; not reproduced on real storage.
   - Emulator startup timing is noisy (about ±150ms), so small timing differences from the startup wait cannot be ruled out.
@@ -197,4 +239,5 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
   Three controlled runs with `adb shell getevent -lt` recording real device input did not reproduce it. Separately, one unexplained real touch on the emulator window was recorded during another test. The user was not intentionally interacting with the emulator. It is **not fixed**. If it recurs in a controlled run with no external input events, investigate it as an app bug. Start with the currency selection/swap logic in `CurrencyConverterViewModel` and the picker sheet.
 - **Unexplained History entry (observation, open):** during Phase 12.4 emulator validation, History contained "200 USD → 1,993.92 MAD" at 12:54 PM, which no test script created. It appeared while the emulator was running and the scripts were idle. The cause is unknown: possibly manual input on the emulator window, not established. No History behavior was changed. If similar entries appear in a controlled run with no external input (check with `getevent`), investigate it together with the intermittent issue above.
+  - Second observation (2026-10-09, Phase 12.7): History contained "100 MAD → 10.05 USD" at about 09:45 AM, which no test script created. The scripts were idle at that time. Logcat showed touch and clipboard activity between about 09:45:22 and 09:45:27: a touch gesture, a bottom sheet opening and closing, the amount field taking focus, then a clipboard write (Copy). `getevent` was not recording, so the origin of these interactions is not confirmed. The evidence (History screenshot and the saved logcat) is in the session scratchpad. The entry itself is no longer on the emulator: a later `connectedDebugAndroidTest` run uninstalled the app and erased its data. Not resolved.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.

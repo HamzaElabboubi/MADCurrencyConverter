@@ -195,19 +195,18 @@ private fun CurrencyRow(
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (isSelected) {
+                    // Decorative: the row is a selectable radio button that already says "Selected".
                     Icon(
                         painter = painterResource(R.drawable.ic_check),
-                        contentDescription = stringResource(R.string.selected_currency),
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+                // Fixed name ("Favorite: EUR"); the toggle itself announces checked / not checked.
                 IconToggleButton(checked = isFavorite, onCheckedChange = { onToggleFavorite() }) {
                     Icon(
                         painter = painterResource(if (isFavorite) R.drawable.ic_star else R.drawable.ic_star_border),
-                        contentDescription = stringResource(
-                            if (isFavorite) R.string.remove_favorite else R.string.add_favorite,
-                            currency.code,
-                        ),
+                        contentDescription = stringResource(R.string.favorite_currency, currency.code),
                         tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
