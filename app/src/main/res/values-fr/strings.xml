@@ -14,6 +14,7 @@
 
     <string name="loading_rates">Chargement des taux de change…</string>
     <string name="retry">Réessayer</string>
+    <string name="rates_unavailable_title">Impossible de charger les taux de change</string>
     <string name="error_no_connection">Pas de connexion Internet. Vérifiez votre connexion et réessayez.</string>
     <string name="error_timeout">Le service de taux a mis trop de temps à répondre.</string>
     <string name="error_rate_limited">Trop de requêtes. Réessayez dans quelques minutes.</string>

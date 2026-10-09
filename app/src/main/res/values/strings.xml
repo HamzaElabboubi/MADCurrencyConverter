@@ -17,6 +17,7 @@
 
     <string name="loading_rates">Loading exchange rates…</string>
     <string name="retry">Retry</string>
+    <string name="rates_unavailable_title">Exchange rates couldn\'t be loaded</string>
     <string name="error_no_connection">No internet connection. Check your connection and try again.</string>
     <string name="error_timeout">The rate service took too long to respond.</string>
     <string name="error_rate_limited">Too many requests. Please try again in a few minutes.</string>

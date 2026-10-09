@@ -131,7 +131,30 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - Insets: `MainActivity`'s Scaffold uses `contentWindowInsets` without the top side, so the `TopAppBar` draws behind the status bar and applies the status-bar inset itself. Bottom/horizontal insets and the AdMob `bottomBar` are unchanged, and content never draws under the banner.
 - Verified: English/French/Arabic, light/dark, 100/130/150/200% font scale (title not truncated at 200%), scrolling with the banner loaded (History stays reachable), launcher label. Existing features and AdMob are unchanged.
 
+### Loading, warning and error states (Phase 12.5)
+
+- Presentation only: the ViewModel, repository, caching, throttling, retry policy and calculations are unchanged.
+- `ui/components/RatePanel.kt`: the pure `ratePanel(state, lastError)` picks exactly one rate-area state from `ConverterUiState`, so error and success are never shown together. `RatePanelTest` (JVM) covers it.
+  - `InitialLoading`: first load with nothing to show.
+  - `Unavailable(error, isRetrying)`: no rates at all (no cache, download failed). It never shows a result.
+  - `Available`: live or cached rates, with `isStale`, `refreshError` (only when stale), `isRefreshing`, `missingRate` and `missingRateRetry`.
+- Loading placeholder: `LoadingState` is a `surfaceContainerLow` surface about the result card's height (144dp min), so the screen doesn't jump when rates arrive. It is not a live region.
+- Stable Retry: `onRetry` clears `error` in the ViewModel, so `ConversionSection` remembers the last error. The error card stays in place while retrying, and a progress indicator replaces the Retry button (48dp minimum area, `loading_rates` content description). The stale banner does the same while refreshing.
+- Shared presentation: `StatusCard` (in `StatusMessages.kt`) lays out the icon, optional title, message, then Retry or the spinner. Title and message form one polite live region. The icon means the state never relies on color alone.
+  - Error: `ErrorState`, `error`/`errorContainer` roles, `ic_error`, title `rates_unavailable_title` when no rates could be loaded.
+  - Warning: `StaleRateBanner`, gold `extendedColors.warning*` roles, `ic_warning`. Cached rates stay usable.
+  - Retry buttons and spinners use the container's `on…Container` color.
+- Only one Retry on screen: when the stale banner and the missing-rate card both appear, only the banner offers Retry (`missingRateRetry`).
+- Strings in English, French and Arabic. In RTL the icon and text mirror, and Retry stays at the end. Spinner wording ("Loading exchange rates…") does not claim a network download.
+- Verified: 224 unit tests passing, clean build, lint 0 errors; six UI scenarios checked visually in English, French and Arabic.
+
 ## Known issues
+
+- **Phase 12.5 limitations (open, not fixed):**
+  - A missing-currency Retry while the cache is still valid (last download under an hour ago) can briefly show the spinner while the repository reads DataStore, with no network request. Accepted: the ViewModel load is genuine and the text doesn't promise a download.
+  - Rates can stay displayed without a stale warning if the app stays open past the provider's next update: staleness is evaluated only when rates are loaded. Existing behavior.
+  - Connectivity is not monitored independently while valid cached rates are used.
+  - Live TalkBack verification is deferred to Phase 12.8.
 
 - **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:
   - the amount unexpectedly became `1001000` after typing `1000`;

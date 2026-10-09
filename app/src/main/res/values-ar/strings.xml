@@ -12,6 +12,7 @@
     <string name="yesterday_at">أمس، %1$s</string>
     <string name="loading_rates">جارٍ تحميل أسعار الصرف…</string>
     <string name="retry">إعادة المحاولة</string>
+    <string name="rates_unavailable_title">تعذّر تحميل أسعار الصرف</string>
     <string name="error_no_connection">لا يوجد اتصال بالإنترنت. تحقّق من اتصالك ثم أعد المحاولة.</string>
     <string name="error_timeout">استغرقت خدمة أسعار الصرف وقتًا طويلًا للاستجابة.</string>
     <string name="error_rate_limited">عدد الطلبات كبير جدًا. يُرجى إعادة المحاولة بعد بضع دقائق.</string>

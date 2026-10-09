@@ -28,6 +28,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,10 +65,12 @@ import com.elabboubisolution.madconverter.ui.components.HistorySheet
 import com.elabboubisolution.madconverter.ui.components.LoadingState
 import com.elabboubisolution.madconverter.ui.components.QuickConversionsSection
 import com.elabboubisolution.madconverter.ui.components.RateInfo
+import com.elabboubisolution.madconverter.ui.components.RatePanel
 import com.elabboubisolution.madconverter.ui.components.RealCostSheet
 import com.elabboubisolution.madconverter.ui.components.ResultCard
 import com.elabboubisolution.madconverter.ui.components.StaleRateBanner
 import com.elabboubisolution.madconverter.ui.components.SwapButton
+import com.elabboubisolution.madconverter.ui.components.ratePanel
 import com.elabboubisolution.madconverter.ui.format.ConversionText
 import com.elabboubisolution.madconverter.ui.format.message
 import com.elabboubisolution.madconverter.ui.theme.MADCurrencyConverterTheme
@@ -307,26 +310,43 @@ private fun ConversionSection(
     onShare: (Conversion) -> Unit,
     onRealCost: () -> Unit,
 ) {
-    if (!state.hasRates) {
-        when {
-            state.isLoading -> LoadingState()
-            state.error != null -> ErrorState(message = state.error.message(), onRetry = onRetry)
+    // The error shown before Retry was pressed, so its card stays in place while retrying.
+    var lastError by remember { mutableStateOf<RateFetchError?>(null) }
+    LaunchedEffect(state.error, state.hasRates) {
+        lastError = if (state.hasRates) null else state.error ?: lastError
+    }
+
+    val panel = when (val p = ratePanel(state, lastError)) {
+        RatePanel.InitialLoading -> {
+            LoadingState()
+            return
         }
-        return
+        is RatePanel.Unavailable -> {
+            // Never a result here: no rates were ever loaded.
+            ErrorState(
+                title = stringResource(R.string.rates_unavailable_title),
+                message = p.error.message(),
+                onRetry = onRetry,
+                isRetrying = p.isRetrying,
+            )
+            return
+        }
+        is RatePanel.Available -> p
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        if (state.isStale) {
+        if (panel.isStale) {
             StaleRateBanner(
-                reason = state.refreshError?.message(),
-                isRefreshing = state.isLoading,
+                reason = panel.refreshError?.message(),
+                isRefreshing = panel.isRefreshing,
                 onRetry = onRetry,
             )
         }
-        if (state.missingRate != null) {
+        if (panel.missingRate != null) {
             ErrorState(
-                message = stringResource(R.string.error_missing_rate, state.missingRate.code),
-                onRetry = onRetry,
+                message = stringResource(R.string.error_missing_rate, panel.missingRate.code),
+                onRetry = onRetry.takeIf { panel.missingRateRetry },
+                isRetrying = panel.isRefreshing,
             )
             return@Column
         }
