@@ -122,7 +122,10 @@ internal fun StatusCard(
         // Retry is announced, and a retry that fails with the same error is announced again.
         // "Loading" is held for ANNOUNCE_SETTLE_MILLIS: an instant failure (offline) would
         // otherwise reach TalkBack as two changes both reading the error, i.e. twice.
-        var announceLoading by remember { mutableStateOf(false) }
+        // Starts as the current state: a card recreated mid-retry (rotation) holds "Loading" from
+        // its first frame, never the error text first. TalkBack may still read it once more when
+        // the recreated screen appears (observed in Phase 13.3).
+        var announceLoading by remember { mutableStateOf(isRetrying) }
         LaunchedEffect(isRetrying) {
             if (isRetrying) {
                 announceLoading = true

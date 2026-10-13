@@ -108,9 +108,13 @@ fun RateFetchError.message(): String = when (this) {
     is RateFetchError.RateUnavailable -> stringResource(R.string.error_rates_unavailable)
 }
 
-/** "Today, 10:30" for today, otherwise a short localized date and time. */
+/**
+ * "Today, 10:30" for today, otherwise a short localized date and time. "Today" is relative to
+ * [nowMillis] (when the view model last checked the rates), or to the current time if null.
+ */
 @Composable
-fun formatLastUpdated(epochSeconds: Long): String = formatTimestamp(epochSeconds * 1000, showYesterday = false)
+fun formatLastUpdated(epochSeconds: Long, nowMillis: Long? = null): String =
+    formatTimestamp(epochSeconds * 1000, showYesterday = false, nowMillis = nowMillis)
 
 /** "Today, 12:45", "Yesterday, 18:20" or a short localized date and time. */
 @Composable
@@ -121,10 +125,10 @@ fun formatHistoryTimestamp(epochMillis: Long): String = formatTimestamp(epochMil
  * with Western digits like every other number in the app.
  */
 @Composable
-private fun formatTimestamp(epochMillis: Long, showYesterday: Boolean): String {
+private fun formatTimestamp(epochMillis: Long, showYesterday: Boolean, nowMillis: Long? = null): String {
     val context = LocalContext.current
     val time = DateUtils.formatDateTime(context, epochMillis, DateUtils.FORMAT_SHOW_TIME)
-    val text = when (relativeDay(epochMillis, System.currentTimeMillis())) {
+    val text = when (relativeDay(epochMillis, nowMillis ?: System.currentTimeMillis())) {
         RelativeDay.TODAY -> stringResource(R.string.today_at, time)
         RelativeDay.YESTERDAY if showYesterday -> stringResource(R.string.yesterday_at, time)
         else -> DateUtils.formatDateTime(

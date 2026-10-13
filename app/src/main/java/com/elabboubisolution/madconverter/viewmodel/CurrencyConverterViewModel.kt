@@ -26,6 +26,7 @@ import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,6 +37,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import java.math.BigDecimal
+import java.util.Calendar
+import java.util.TimeZone
 
 enum class AmountError { INVALID, TOO_LARGE }
 
@@ -44,7 +47,9 @@ enum class AmountError { INVALID, TOO_LARGE }
  * and the loaded rates; only the ViewModel computes them.
  *
  * @property isLoading a download is in progress (rates already shown, if any, stay visible).
- * @property error why no rates at all could be loaded.
+ * @property error why no rates at all could be loaded (never set while rates are shown). Kept
+ *   while Retry runs, so the error card stays in place; cleared when rates arrive, replaced by
+ *   the new error if Retry fails.
  * @property isStale the displayed rates come from the local cache and may not be current.
  * @property refreshError why fresh rates could not be downloaded, when [isStale].
  * @property missingRate a selected currency the loaded rates do not cover.
@@ -56,6 +61,8 @@ enum class AmountError { INVALID, TOO_LARGE }
  * @property history copied/shared conversions, newest first (historical values, not current).
  * @property feePercent Real Cost fee the user chose (0–[RealCost.MAX_FEE_PERCENT]).
  * @property realCost [result] with [feePercent] applied; null when there is no result.
+ * @property freshnessCheckedAtMillis when rate freshness was last checked: the "now" the
+ *   last-updated time is shown relative to ("Today, ..."); null to use the current time.
  */
 data class ConverterUiState(
     val amountInput: String = "",
@@ -75,6 +82,7 @@ data class ConverterUiState(
     val history: List<HistoryEntry> = emptyList(),
     val feePercent: BigDecimal = BigDecimal.ZERO,
     val realCost: RealCostEstimate? = null,
+    val freshnessCheckedAtMillis: Long? = null,
 ) {
     /** Rates (live or cached) are loaded, so the rate, update time and result can be shown. */
     val hasRates: Boolean get() = lastUpdatedEpochSeconds != null
@@ -86,6 +94,8 @@ class CurrencyConverterViewModel(
     private val historyStore: HistoryStore,
     private val feePreferenceStore: FeePreferenceStore,
     private val currencyPairStore: CurrencyPairStore,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val timeZone: () -> TimeZone = TimeZone::getDefault,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ConverterUiState())
@@ -111,7 +121,28 @@ class CurrencyConverterViewModel(
 
     /** Last fee written to storage, to skip redundant writes. */
     private var persistedFeePercent: BigDecimal? = null
+
+    /**
+     * The only running rate load (initial, Retry, foreground or scheduled check): a new load is
+     * never started while it is active, so the repository is never called concurrently.
+     */
     private var loadJob: Job? = null
+
+    /** When the displayed rates stop being current (from the repository); null: unknown or now. */
+    private var refreshDueAtMillis: Long? = null
+
+    /** After a failed download, automatic checks wait until then (Retry does not); 0 after a success. */
+    private var autoRefreshNotBeforeMillis = 0L
+
+    /**
+     * The one automatic recovery attempt of the current failure sequence (failed downloads since
+     * the last successful one) has been made. Reset only by a successful download.
+     */
+    private var recoveryAttempted = false
+
+    /** The screen is visible: freshness is then also checked at the deadline and at midnight. */
+    private var isInForeground = false
+    private var freshnessJob: Job? = null
 
     /**
      * Set by the first user change of the pair. From then on the in-memory pair is the truth:
@@ -127,7 +158,7 @@ class CurrencyConverterViewModel(
     private val pairToSave = MutableStateFlow<CurrencyPair?>(null)
 
     init {
-        loadRates()
+        loadRates(silent = false)
         restoreSavedPair()
         viewModelScope.launch {
             pairToSave.filterNotNull().collect { pair ->
@@ -181,13 +212,9 @@ class CurrencyConverterViewModel(
         it.copy(from = entry.from, to = entry.to, amountInput = entry.amount.toPlainString())
     }
 
-    fun onHistoryEntryDeleted(id: String) {
-        viewModelScope.launch { historyStore.delete(id) }
-    }
+    fun onHistoryEntryDeleted(id: String) = persist { historyStore.delete(id) }
 
-    fun onHistoryCleared() {
-        viewModelScope.launch { historyStore.clear() }
-    }
+    fun onHistoryCleared() = persist { historyStore.clear() }
 
     /**
      * Updates the Real Cost estimate immediately without saving, so typing a custom percentage
@@ -203,22 +230,56 @@ class CurrencyConverterViewModel(
         val percent = _uiState.value.feePercent
         if (persistedFeePercent?.compareTo(percent) == 0) return
         persistedFeePercent = percent
-        viewModelScope.launch { feePreferenceStore.setFeePercent(percent) }
+        persist(
+            // Not saved: forget it, so committing the same fee again retries. A newer fee
+            // committed meanwhile is left alone.
+            onFailure = { if (persistedFeePercent?.compareTo(percent) == 0) persistedFeePercent = null },
+        ) { feePreferenceStore.setFeePercent(percent) }
     }
 
     private fun recordCurrentConversion() {
         val state = _uiState.value
         val result = state.result ?: return
-        viewModelScope.launch { historyStore.record(result, wasStale = state.isStale) }
+        persist { historyStore.record(result, wasStale = state.isStale) }
     }
 
     fun onSwapCurrencies() = changePair { it.copy(from = it.to, to = it.from) }
 
-    fun onRetry() = loadRates()
+    fun onRetry() = loadRates(silent = false)
+
+    /**
+     * The screen became visible (lifecycle STARTED): checks rate freshness now, then again at the
+     * rates' refresh deadline and at midnight (for "Today") while it stays visible.
+     */
+    fun onForeground() {
+        isInForeground = true
+        checkFreshness()
+    }
+
+    /** The screen is no longer visible: no scheduled check runs until [onForeground]. */
+    fun onBackground() {
+        isInForeground = false
+        freshnessJob?.cancel()
+        freshnessJob = null
+    }
 
     fun onToggleFavorite(currency: Currency) {
         val isFavorite = currency in _uiState.value.favorites
-        viewModelScope.launch { favoritesStore.setFavorite(currency, !isFavorite) }
+        persist { favoritesStore.setFavorite(currency, !isFavorite) }
+    }
+
+    /**
+     * Runs a write to local storage. A storage failure ([IOException], e.g. a full disk) must not
+     * crash the app: nothing was saved, and the stores' flows keep showing what is stored.
+     */
+    private fun persist(onFailure: () -> Unit = {}, write: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                write()
+            } catch (_: IOException) {
+                onFailure()
+            }
+        }
     }
 
     /** Applies the saved pair unless the user already chose one (see [pairChangedByUser]). */
@@ -250,25 +311,114 @@ class CurrencyConverterViewModel(
         if (state.from != state.to) pairToSave.value = CurrencyPair(state.from, state.to)
     }
 
-    private fun loadRates() {
+    /**
+     * Loads rates through the repository, which serves the cache while it is current and
+     * otherwise downloads (at most once an hour). A [silent] load (automatic check) leaves the
+     * screen as it is until the result arrives: no progress indicator, nothing announced.
+     * Retry during a silent load shows its progress and waits for that same load.
+     */
+    private fun loadRates(silent: Boolean) {
+        if (!silent) updateState { it.copy(isLoading = true) }
         if (loadJob?.isActive == true) return
-        updateState { it.copy(isLoading = true, error = null) }
         loadJob = viewModelScope.launch {
-            when (val result = repository.getRates()) {
+            val result = repository.getRates()
+            val now = clock()
+            when (result) {
                 is RatesResult.Available -> {
                     snapshot = result.snapshot
+                    refreshDueAtMillis = result.refreshDueAtMillis
                     updateState {
                         it.copy(
                             isLoading = false,
                             error = null,
                             isStale = result.isStale,
                             refreshError = result.refreshError,
+                            freshnessCheckedAtMillis = now,
                         )
                     }
                 }
-                is RatesResult.Unavailable -> updateState { it.copy(isLoading = false, error = result.error) }
+                is RatesResult.Unavailable -> {
+                    refreshDueAtMillis = null
+                    updateState {
+                        if (snapshot != null) {
+                            // Rates are already shown (e.g. the cache became unreadable): keep them
+                            // usable, but never as current ones.
+                            it.copy(
+                                isLoading = false,
+                                error = null,
+                                isStale = true,
+                                refreshError = result.error,
+                                freshnessCheckedAtMillis = now,
+                            )
+                        } else {
+                            it.copy(isLoading = false, error = result.error, freshnessCheckedAtMillis = now)
+                        }
+                    }
+                }
             }
+            val downloadFailed = result is RatesResult.Unavailable || (result as RatesResult.Available).isStale
+            if (downloadFailed) {
+                autoRefreshNotBeforeMillis = now + AUTO_REFRESH_BACKOFF_MILLIS
+            } else {
+                autoRefreshNotBeforeMillis = 0L
+                recoveryAttempted = false
+            }
+            scheduleFreshnessCheck()
         }
+    }
+
+    private val isRateDue: Boolean get() = snapshot == null || (refreshDueAtMillis ?: clock()) <= clock()
+
+    /**
+     * Compares the rates with the clock. Loads them (silently) when they are due or missing,
+     * unless a load is running or a recent automatic attempt failed; otherwise only updates the
+     * "now" of the last-updated time and schedules the next check.
+     * [isRecovery]: called by the recovery timer; a load it starts uses up the recovery attempt.
+     */
+    private fun checkFreshness(isRecovery: Boolean = false) {
+        val now = clock()
+        updateState { it.copy(freshnessCheckedAtMillis = now) }
+        if (isRateDue && now >= autoRefreshNotBeforeMillis && loadJob?.isActive != true) {
+            if (isRecovery) recoveryAttempted = true
+            loadRates(silent = true) // schedules the next check when it completes
+        } else {
+            scheduleFreshnessCheck()
+        }
+    }
+
+    /**
+     * While visible, one timer: at the rates' refresh deadline, at the next midnight (so "Today"
+     * stays right) or, after a failed download, at the end of the pause, whichever comes first.
+     * That recovery attempt is made once per failure sequence: if it fails too, nothing is
+     * retried before the next midnight check, foreground return or Retry. No timer while not
+     * visible, so a pending recovery is dropped then (a foreground return checks anyway).
+     */
+    private fun scheduleFreshnessCheck() {
+        freshnessJob?.cancel()
+        freshnessJob = null
+        if (!isInForeground) return
+        val now = clock()
+        val deadline = refreshDueAtMillis?.takeIf { snapshot != null && it > now } ?: Long.MAX_VALUE
+        // Only in the future: once the pause is over, a load is running (it reschedules when done).
+        val recoveryAt = autoRefreshNotBeforeMillis
+            .takeIf { it > now && !recoveryAttempted && isRateDue }
+            ?: Long.MAX_VALUE
+        val wakeAt = minOf(deadline, recoveryAt, nextMidnightMillis(now))
+        freshnessJob = viewModelScope.launch {
+            delay(wakeAt - now)
+            freshnessJob = null
+            checkFreshness(isRecovery = wakeAt == recoveryAt)
+        }
+    }
+
+    private fun nextMidnightMillis(nowMillis: Long): Long = Calendar.getInstance(timeZone()).run {
+        timeInMillis = nowMillis
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+        add(Calendar.DAY_OF_YEAR, 1)
+        timeInMillis
     }
 
     private fun updateState(transform: (ConverterUiState) -> ConverterUiState) {
@@ -277,6 +427,9 @@ class CurrencyConverterViewModel(
 
     companion object {
         private const val MAX_INPUT_LENGTH = 24
+
+        /** Pause before an automatic check tries again after a failed download (Retry does not wait). */
+        const val AUTO_REFRESH_BACKOFF_MILLIS = 15 * 60 * 1000L
 
         val Factory: ViewModelProvider.Factory = viewModelFactory {
             initializer {

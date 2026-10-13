@@ -39,11 +39,10 @@ sealed interface RatePanel {
 }
 
 /**
- * @param lastError the error shown before the current load started. The view model clears
- *   [ConverterUiState.error] when Retry starts; remembering it keeps the error card visible
- *   (with a progress indicator) until the new result arrives.
+ * Derived from the view model's state alone, so a recreated screen (e.g. after a rotation)
+ * shows the same card: [ConverterUiState.error] is kept while Retry runs ([isLoading][ConverterUiState.isLoading]).
  */
-fun ratePanel(state: ConverterUiState, lastError: RateFetchError?): RatePanel = when {
+fun ratePanel(state: ConverterUiState): RatePanel = when {
     state.hasRates -> RatePanel.Available(
         isStale = state.isStale,
         refreshError = state.refreshError.takeIf { state.isStale },
@@ -51,7 +50,6 @@ fun ratePanel(state: ConverterUiState, lastError: RateFetchError?): RatePanel = 
         missingRate = state.missingRate,
         missingRateRetry = state.missingRate != null && !state.isStale,
     )
-    state.error != null -> RatePanel.Unavailable(state.error, isRetrying = false)
-    state.isLoading && lastError != null -> RatePanel.Unavailable(lastError, isRetrying = true)
+    state.error != null -> RatePanel.Unavailable(state.error, isRetrying = state.isLoading)
     else -> RatePanel.InitialLoading
 }

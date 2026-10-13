@@ -28,7 +28,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.elabboubisolution.madconverter.R
@@ -95,6 +95,13 @@ fun CurrencyConverterScreen(
     val noShareAppMessage = stringResource(R.string.no_share_app)
     val shareSubject = stringResource(R.string.share_subject)
     val chooserTitle = stringResource(R.string.share_chooser_title)
+
+    // Rate freshness is checked whenever the screen becomes visible, and on a timer only while
+    // it stays visible (see CurrencyConverterViewModel.onForeground).
+    LifecycleStartEffect(viewModel) {
+        viewModel.onForeground()
+        onStopOrDispose { viewModel.onBackground() }
+    }
 
     Box(modifier = modifier) {
         CurrencyConverterContent(
@@ -311,13 +318,7 @@ private fun ConversionSection(
     onShare: (Conversion) -> Unit,
     onRealCost: () -> Unit,
 ) {
-    // The error shown before Retry was pressed, so its card stays in place while retrying.
-    var lastError by remember { mutableStateOf<RateFetchError?>(null) }
-    LaunchedEffect(state.error, state.hasRates) {
-        lastError = if (state.hasRates) null else state.error ?: lastError
-    }
-
-    val panel = when (val p = ratePanel(state, lastError)) {
+    val panel = when (val p = ratePanel(state)) {
         RatePanel.InitialLoading -> {
             LoadingState()
             return
@@ -368,6 +369,7 @@ private fun ConversionSection(
                 to = state.to,
                 rate = rate,
                 lastUpdatedEpochSeconds = state.lastUpdatedEpochSeconds,
+                nowMillis = state.freshnessCheckedAtMillis,
             )
         }
         // Hidden without a result or without eligible favorites: never zero-value rows.

@@ -16,20 +16,20 @@ class RatePanelTest {
     @Test
     fun `initial load without cached data shows the placeholder`() {
         val state = ConverterUiState(isLoading = true)
-        assertEquals(RatePanel.InitialLoading, ratePanel(state, lastError = null))
+        assertEquals(RatePanel.InitialLoading, ratePanel(state))
     }
 
     @Test
     fun `loading while cached rates are available keeps them visible`() {
         val state = ConverterUiState(isLoading = true, lastUpdatedEpochSeconds = loaded)
-        val panel = ratePanel(state, lastError = null) as RatePanel.Available
+        val panel = ratePanel(state) as RatePanel.Available
         assertTrue(panel.isRefreshing)
         assertFalse(panel.isStale)
     }
 
     @Test
     fun `current cached rates show no warning`() {
-        val panel = ratePanel(ConverterUiState(isLoading = false, lastUpdatedEpochSeconds = loaded), null)
+        val panel = ratePanel(ConverterUiState(isLoading = false, lastUpdatedEpochSeconds = loaded))
         assertEquals(RatePanel.Available(false, null, false, null, false), panel)
     }
 
@@ -41,7 +41,7 @@ class RatePanelTest {
             isStale = true,
             refreshError = RateFetchError.NoConnection,
         )
-        val panel = ratePanel(state, null) as RatePanel.Available
+        val panel = ratePanel(state) as RatePanel.Available
         assertTrue(panel.isStale)
         assertEquals(RateFetchError.NoConnection, panel.refreshError)
         assertFalse(panel.isRefreshing)
@@ -50,25 +50,22 @@ class RatePanelTest {
     @Test
     fun `network failure without cached data shows the error, never a result`() {
         val state = ConverterUiState(amountInput = "1000", isLoading = false, error = RateFetchError.NoConnection)
-        assertEquals(RatePanel.Unavailable(RateFetchError.NoConnection, isRetrying = false), ratePanel(state, null))
+        assertEquals(RatePanel.Unavailable(RateFetchError.NoConnection, isRetrying = false), ratePanel(state))
         assertNull(state.result)
     }
 
     @Test
     fun `retry without cached data keeps the error card with a progress indicator`() {
-        // The view model clears `error` while retrying; the remembered error keeps the card.
-        val retrying = ConverterUiState(isLoading = true, error = null)
-        assertEquals(
-            RatePanel.Unavailable(RateFetchError.Timeout, isRetrying = true),
-            ratePanel(retrying, lastError = RateFetchError.Timeout),
-        )
+        // The view model keeps `error` while retrying, so the state alone gives the card.
+        val retrying = ConverterUiState(isLoading = true, error = RateFetchError.Timeout)
+        assertEquals(RatePanel.Unavailable(RateFetchError.Timeout, isRetrying = true), ratePanel(retrying))
     }
 
     @Test
     fun `successful recovery after retry clears error and warning`() {
         val recovered = ConverterUiState(isLoading = false, lastUpdatedEpochSeconds = loaded)
-        // Even with a remembered error, available rates win: no contradictory messages.
-        val panel = ratePanel(recovered, lastError = RateFetchError.NoConnection) as RatePanel.Available
+        // Available rates always win over an error: no contradictory messages.
+        val panel = ratePanel(recovered) as RatePanel.Available
         assertFalse(panel.isStale)
         assertNull(panel.refreshError)
         assertNull(panel.missingRate)
@@ -77,16 +74,16 @@ class RatePanelTest {
     @Test
     fun `a refresh error is not shown when the rates are not stale`() {
         val state = ConverterUiState(lastUpdatedEpochSeconds = loaded, isLoading = false, refreshError = RateFetchError.Timeout)
-        assertNull((ratePanel(state, null) as RatePanel.Available).refreshError)
+        assertNull((ratePanel(state) as RatePanel.Available).refreshError)
     }
 
     @Test
     fun `missing rate offers retry only when the stale banner does not`() {
         val fresh = ConverterUiState(isLoading = false, lastUpdatedEpochSeconds = loaded, missingRate = Currency.GBP)
-        assertTrue((ratePanel(fresh, null) as RatePanel.Available).missingRateRetry)
+        assertTrue((ratePanel(fresh) as RatePanel.Available).missingRateRetry)
 
         val stale = fresh.copy(isStale = true, refreshError = RateFetchError.NoConnection)
-        val panel = ratePanel(stale, null) as RatePanel.Available
+        val panel = ratePanel(stale) as RatePanel.Available
         assertTrue(panel.isStale)
         assertEquals(Currency.GBP, panel.missingRate)
         assertFalse("only one Retry on screen", panel.missingRateRetry)

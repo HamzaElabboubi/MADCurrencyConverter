@@ -1,10 +1,6 @@
 package com.elabboubisolution.madconverter.viewmodel
 
 import com.elabboubisolution.madconverter.data.local.CurrencyPair
-import com.elabboubisolution.madconverter.data.local.CurrencyPairStore
-import com.elabboubisolution.madconverter.data.local.FavoritesStore
-import com.elabboubisolution.madconverter.data.local.FeePreferenceStore
-import com.elabboubisolution.madconverter.data.local.HistoryStore
 import com.elabboubisolution.madconverter.data.repository.CurrencyRepository
 import com.elabboubisolution.madconverter.data.repository.RatesResult
 import com.elabboubisolution.madconverter.domain.Conversion
@@ -12,14 +8,17 @@ import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.HistoryEntry
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateSnapshot
+import com.elabboubisolution.madconverter.testing.FakeCurrencyPairStore
+import com.elabboubisolution.madconverter.testing.FakeFavoritesStore
+import com.elabboubisolution.madconverter.testing.FakeFeePreferenceStore
+import com.elabboubisolution.madconverter.testing.FakeHistoryStore
 import com.elabboubisolution.madconverter.testing.SampleRates
+import com.elabboubisolution.madconverter.ui.components.RatePanel
+import com.elabboubisolution.madconverter.ui.components.ratePanel
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -32,7 +31,6 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.IOException
 import java.math.BigDecimal
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -154,7 +152,7 @@ class CurrencyConverterViewModelTest {
 
         viewModel.onRetry()
         assertTrue(viewModel.uiState.value.isLoading)
-        assertNull(viewModel.uiState.value.error)
+        assertEquals("kept until the retry ends", RateFetchError.NoConnection, viewModel.uiState.value.error)
 
         repository.complete(RatesResult.Available(snapshot, isStale = false))
         dispatcher.scheduler.runCurrent()
@@ -227,6 +225,230 @@ class CurrencyConverterViewModelTest {
         assertFalse(refreshed.isLoading)
         assertFalse(refreshed.isStale)
         assertNull(refreshed.refreshError)
+    }
+
+    // --- Failed refresh while rates are displayed ---
+
+    @Test
+    fun `a failed refresh keeps the displayed rates and marks them stale`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isLoading)
+        assertTrue(state.hasRates)
+        assertTrue(state.isStale)
+        assertEquals(RateFetchError.NoConnection, state.refreshError)
+        assertNull("not the no-rates error", state.error)
+        assertEquals(1791158551L, state.lastUpdatedEpochSeconds)
+        assertEquals(BigDecimal("100.81"), state.result?.convertedAmount)
+        assertEquals(
+            "stale banner with its reason, never the no-rates error card",
+            RatePanel.Available(
+                isStale = true,
+                refreshError = RateFetchError.NoConnection,
+                isRefreshing = false,
+                missingRate = null,
+                missingRateRetry = false,
+            ),
+            ratePanel(state),
+        )
+    }
+
+    @Test
+    fun `a failed missing-rate retry shows the stale banner as the only retry`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot.copy(rates = snapshot.rates - Currency.GBP), isStale = false))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onToCurrencySelected(Currency.GBP)
+
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(
+            RatePanel.Available(
+                isStale = true,
+                refreshError = RateFetchError.Timeout,
+                isRefreshing = false,
+                missingRate = Currency.GBP,
+                missingRateRetry = false,
+            ),
+            ratePanel(viewModel.uiState.value),
+        )
+    }
+
+    @Test
+    fun `copy and share after a failed refresh are recorded as stale`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onResultCopied()
+        viewModel.onResultShared()
+        dispatcher.scheduler.runCurrent()
+
+        assertEquals(listOf(true, true), history.recorded.map { it.second })
+        assertEquals("copy and share never reload rates", 2, repository.calls)
+    }
+
+    @Test
+    fun `a later failure replaces the reason of already stale rates`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isStale)
+        assertEquals(RateFetchError.NoConnection, state.refreshError)
+        assertNull(state.error)
+    }
+
+    @Test
+    fun `a successful refresh after the failure clears the stale status`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onRetry()
+        val refreshing = ratePanel(viewModel.uiState.value) as RatePanel.Available
+        assertTrue("the stale banner stays while refreshing", refreshing.isStale && refreshing.isRefreshing)
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertFalse(state.isStale)
+        assertNull(state.refreshError)
+        assertNull(state.error)
+        viewModel.onResultCopied()
+        dispatcher.scheduler.runCurrent()
+        assertFalse(history.recorded.single().second)
+    }
+
+    @Test
+    fun `a failure without any displayed rates still shows the no-rates error`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        viewModel.onAmountChange("1000")
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(RateFetchError.NoConnection, state.error)
+        assertFalse(state.hasRates)
+        assertFalse(state.isStale)
+        assertNull(state.refreshError)
+        assertNull(state.result)
+        assertEquals(RatePanel.Unavailable(RateFetchError.NoConnection, isRetrying = false), ratePanel(state))
+
+        viewModel.onResultCopied()
+        dispatcher.scheduler.runCurrent()
+        assertEquals("nothing to record without rates", 0, history.recorded.size)
+    }
+
+    // --- Retry without any rates (error card state lives in the view model) ---
+
+    @Test
+    fun `retry without rates keeps the error and shows progress, from the state alone`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onRetry()
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.isLoading)
+        assertEquals("the error stays while retrying", RateFetchError.NoConnection, state.error)
+        // A recreated screen (rotation) has nothing remembered: the state must suffice.
+        assertEquals(
+            RatePanel.Unavailable(RateFetchError.NoConnection, isRetrying = true),
+            ratePanel(state),
+        )
+        assertEquals(2, repository.calls)
+    }
+
+    @Test
+    fun `a successful retry without rates clears the error`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+        viewModel.onAmountChange("1000")
+
+        viewModel.onRetry()
+        repository.complete(RatesResult.Available(snapshot, isStale = false))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertNull(state.error)
+        assertFalse(state.isLoading)
+        assertFalse(state.isStale)
+        assertEquals(BigDecimal("100.81"), state.result?.convertedAmount)
+        assertTrue(ratePanel(state) is RatePanel.Available)
+    }
+
+    @Test
+    fun `a failed retry without rates shows the latest error`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onRetry()
+        repository.complete(RatesResult.Unavailable(RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+
+        val state = viewModel.uiState.value
+        assertEquals(RateFetchError.Timeout, state.error)
+        assertFalse(state.isLoading)
+        assertFalse(state.hasRates)
+        assertEquals(RatePanel.Unavailable(RateFetchError.Timeout, isRetrying = false), ratePanel(state))
+    }
+
+    @Test
+    fun `retry with stale rates shown never shows the no-rates error`() = runTest(dispatcher) {
+        val repository = FakeRepository()
+        val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
+        repository.complete(RatesResult.Available(snapshot, isStale = true, refreshError = RateFetchError.Timeout))
+        dispatcher.scheduler.runCurrent()
+
+        viewModel.onRetry()
+        dispatcher.scheduler.runCurrent()
+        val retrying = ratePanel(viewModel.uiState.value) as RatePanel.Available
+        assertTrue(retrying.isStale && retrying.isRefreshing)
+        assertNull(viewModel.uiState.value.error)
+
+        repository.complete(RatesResult.Unavailable(RateFetchError.NoConnection))
+        dispatcher.scheduler.runCurrent()
+        val failed = ratePanel(viewModel.uiState.value) as RatePanel.Available
+        assertTrue(failed.isStale && !failed.isRefreshing)
+        assertEquals(RateFetchError.NoConnection, failed.refreshError)
+        assertNull(viewModel.uiState.value.error)
     }
 
     @Test
@@ -973,100 +1195,103 @@ class CurrencyConverterViewModelTest {
         assertEquals(Currency.MAD, second.uiState.value.to)
     }
 
+    // --- Storage write failures ---
+
+    @Test
+    fun `a failed favorite write keeps the stored favorites and a later toggle works`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        favorites.failNextWrite = true
+
+        viewModel.onToggleFavorite(Currency.GBP)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(setOf(Currency.MAD, Currency.EUR, Currency.USD), viewModel.uiState.value.favorites)
+
+        viewModel.onToggleFavorite(Currency.GBP)
+        dispatcher.scheduler.runCurrent()
+        assertEquals(setOf(Currency.MAD, Currency.EUR, Currency.USD, Currency.GBP), viewModel.uiState.value.favorites)
+    }
+
+    @Test
+    fun `a failed history write records nothing, keeps the result and a later copy is recorded`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+        history.failingWrites = 1
+
+        viewModel.onResultCopied()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(emptyList<Pair<Conversion, Boolean>>(), history.recorded)
+        assertEquals(BigDecimal("100.81"), viewModel.uiState.value.result?.convertedAmount)
+
+        viewModel.onResultShared()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(BigDecimal("100.81"), history.recorded.single().first.convertedAmount)
+    }
+
+    @Test
+    fun `failed history delete and clear leave the entries and can be repeated`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        history.failingWrites = 2
+
+        viewModel.onHistoryEntryDeleted("abc")
+        viewModel.onHistoryCleared()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(emptyList<String>(), history.deleted)
+        assertEquals(0, history.clears)
+
+        viewModel.onHistoryEntryDeleted("abc")
+        viewModel.onHistoryCleared()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf("abc"), history.deleted)
+        assertEquals(1, history.clears)
+    }
+
+    @Test
+    fun `a failed fee save keeps the fee in memory and committing it again retries`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        viewModel.onAmountChange("1000")
+        fees.failNextWrite = true
+
+        viewModel.onFeePercentChanged(BigDecimal("2"))
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(emptyList<BigDecimal>(), fees.writes)
+        assertEquals(BigDecimal("2"), viewModel.uiState.value.feePercent)
+        assertEquals(BigDecimal("2.02"), viewModel.uiState.value.realCost!!.fee)
+
+        // Same fee again (e.g. Real Cost closed once more): not skipped as already saved.
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf(BigDecimal("2")), fees.writes)
+
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals("saved now, so no redundant write", listOf(BigDecimal("2")), fees.writes)
+    }
+
+    @Test
+    fun `a failed save of an older fee does not force a newer saved fee to be rewritten`() = runTest(dispatcher) {
+        val viewModel = loadedViewModel()
+        fees.failNextWrite = true
+
+        // The 1% save fails after 3% was already committed.
+        viewModel.onFeePercentChanged(BigDecimal("1"))
+        viewModel.onFeePercentCommitted()
+        viewModel.onFeePercentChanged(BigDecimal("3"))
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf(BigDecimal("3")), fees.writes)
+
+        viewModel.onFeePercentCommitted()
+        dispatcher.scheduler.runCurrent()
+        assertEquals(listOf(BigDecimal("3")), fees.writes)
+    }
+
     private fun loadedViewModel(rates: RateSnapshot = snapshot): CurrencyConverterViewModel {
         val repository = FakeRepository()
         val viewModel = CurrencyConverterViewModel(repository, favorites, history, fees, pairs)
         repository.complete(RatesResult.Available(rates, isStale = false))
         dispatcher.scheduler.runCurrent()
         return viewModel
-    }
-
-    /** In-memory pair store; gates let a test hold a read or a write to stage a race. */
-    private class FakeCurrencyPairStore : CurrencyPairStore {
-        var saved: CurrencyPair? = null
-        val writes = mutableListOf<CurrencyPair>()
-        var saveCalls = 0
-            private set
-
-        /** When set, [read] waits for it (slow startup read). */
-        var readGate: CompletableDeferred<Unit>? = null
-
-        /** When set, [save] waits for it before writing (slow write). */
-        var saveGate: CompletableDeferred<Unit>? = null
-
-        var failNextSave = false
-
-        var failRead = false
-
-        /** Returns what was stored when the read started, like a slow disk read. */
-        override suspend fun read(): CurrencyPair? {
-            val stored = saved
-            readGate?.await()
-            if (failRead) throw IOException("unreadable")
-            return stored
-        }
-
-        override suspend fun save(pair: CurrencyPair) {
-            saveCalls++
-            saveGate?.await()
-            if (failNextSave) {
-                failNextSave = false
-                throw IOException("disk full")
-            }
-            writes += pair
-            saved = pair
-        }
-    }
-
-    private class FakeFeePreferenceStore : FeePreferenceStore {
-        var saved: BigDecimal = BigDecimal.ZERO
-        val writes = mutableListOf<BigDecimal>()
-        override val feePercent get() = flowOf(saved)
-
-        override suspend fun setFeePercent(percent: BigDecimal) {
-            writes += percent
-            saved = percent
-        }
-    }
-
-    private class FakeHistoryStore : HistoryStore {
-        val state = MutableStateFlow<List<HistoryEntry>>(emptyList())
-        override val entries: StateFlow<List<HistoryEntry>> = state
-        val recorded = mutableListOf<Pair<Conversion, Boolean>>()
-        val deleted = mutableListOf<String>()
-        var clears = 0
-            private set
-
-        override suspend fun record(conversion: Conversion, wasStale: Boolean) {
-            recorded += conversion to wasStale
-        }
-
-        override suspend fun delete(id: String) {
-            deleted += id
-        }
-
-        override suspend fun clear() {
-            clears++
-        }
-    }
-
-    private class FakeFavoritesStore : FavoritesStore {
-        private val state = MutableStateFlow(setOf(Currency.MAD, Currency.EUR, Currency.USD))
-        override val favorites: StateFlow<Set<Currency>> = state
-
-        /** Persisted writes, i.e. user favorite toggles. */
-        var writes = 0
-            private set
-
-        override suspend fun setFavorite(currency: Currency, isFavorite: Boolean) {
-            writes++
-            state.value = if (isFavorite) state.value + currency else state.value - currency
-        }
-
-        /** Simulates favorites changed elsewhere (not counted as a write). */
-        fun set(vararg currencies: Currency) {
-            state.value = currencies.toSet()
-        }
     }
 
     /** Each call suspends until the test completes it, so loading states can be observed. */

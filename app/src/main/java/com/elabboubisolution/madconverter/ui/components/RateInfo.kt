@@ -26,7 +26,10 @@ import java.math.BigDecimal
 
 private const val PROVIDER_URL = "https://www.exchangerate-api.com"
 
-/** Exchange rate (4 decimals), provider update time and the attribution required by the provider. */
+/**
+ * Exchange rate (4 decimals), provider update time and the attribution required by the provider.
+ * [nowMillis]: the time "Today" refers to (see [formatLastUpdated]).
+ */
 @Composable
 fun RateInfo(
     from: Currency,
@@ -34,6 +37,7 @@ fun RateInfo(
     rate: BigDecimal,
     lastUpdatedEpochSeconds: Long?,
     modifier: Modifier = Modifier,
+    nowMillis: Long? = null,
 ) {
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -42,7 +46,7 @@ fun RateInfo(
         )
         if (lastUpdatedEpochSeconds != null) {
             Text(
-                text = stringResource(R.string.last_updated, formatLastUpdated(lastUpdatedEpochSeconds)),
+                text = stringResource(R.string.last_updated, formatLastUpdated(lastUpdatedEpochSeconds, nowMillis)),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -10,6 +10,9 @@ How the data flows:
 - **`data/remote`**: `ErApiRateProvider` calls ExchangeRate-API's open endpoint (`open.er-api.com/v6/latest/MAD`, no key) through Retrofit and turns every failure into a typed `RateFetchError`. Errors arrive as HTTP 200 with `"result":"error"`, so check the body as well as the status. Rates are parsed straight to `BigDecimal`.
 - **`data/local/RateCache`**: stores the last successful snapshot in DataStore as JSON, with rates kept as strings. Corrupt data reads as an empty cache.
 - **`data/repository/CachingCurrencyRepository`**: serves the cache as current until the provider's `nextUpdateEpochSeconds`, then downloads. It never downloads more than once an hour, which the provider requires. If a download fails, it returns the cache with `isStale = true`, and the UI must then show `StaleRateBanner`.
+  - `RatesResult.Available.refreshDueAtMillis`: when the returned rates stop being current (the next update, never within an hour of the last download; the call time if already due). The ViewModel schedules its freshness check from it (Phase 13).
+  - A download that cannot be saved (`IOException`, e.g. a full disk) is still returned and kept in memory (`unsaved`), then served and throttled like the cache for the rest of the process. Cleared once a later download is saved.
+  - Single-caller assumption: `unsaved` is not synchronized. It is safe because only `CurrencyConverterViewModel` calls `getRates()`, through its single `loadJob`. Don't add another caller without adding synchronization.
 - **`domain/model/Currency`**: the enum order is the picker order. Names and minor-unit digits come from the platform's ISO/CLDR data via `java.util.Currency`, so there are no string resources for currency names. Only the short `symbol` is curated. To add a currency, add an entry, and only if ExchangeRate-API publishes it.
 - **`domain/CurrencySearch`**: pure-JVM picker search over code, localized name and English name. It ignores case and accents and returns favorites first.
 - **`data/local/FavoritesStore`**: favorites live in a separate DataStore (`user_preferences`). The defaults are MAD/EUR/USD until the user changes them.
@@ -20,7 +23,7 @@ How the data flows:
   - It reuses `CurrencyConverter.convert` with the same snapshot as the main result, and is derived in `withDerivedFields`. It must **never** trigger an exchange-rate request or a DataStore write.
   - The section is hidden when there is no result or no eligible favorite.
 - **`domain/CurrencyConverter`**: pure-JVM `BigDecimal` math. Cross rates are computed from the single MAD-based snapshot. It also parses amounts with `,` or `.` as the decimal separator.
-- **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`.
+- **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`. Rate loading, freshness checks and automatic recovery are described in "Rate Freshness and Stability (Phase 13)".
 - **`ads/`**: holds all AdMob code and is referenced only from `MainActivity`.
   - The anchored adaptive `BannerAd` is the Scaffold `bottomBar`, so the content is padded by its height and never drawn under it. It takes no space until an ad loads.
   - `AdsInitializer` is the single place where UMP consent must be added before release.
@@ -134,12 +137,12 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 ### Loading, warning and error states (Phase 12.5)
 
 - Presentation only: the ViewModel, repository, caching, throttling, retry policy and calculations are unchanged.
-- `ui/components/RatePanel.kt`: the pure `ratePanel(state, lastError)` picks exactly one rate-area state from `ConverterUiState`, so error and success are never shown together. `RatePanelTest` (JVM) covers it.
+- `ui/components/RatePanel.kt`: the pure `ratePanel(state)` picks exactly one rate-area state from `ConverterUiState` alone, so error and success are never shown together. `RatePanelTest` (JVM) covers it.
   - `InitialLoading`: first load with nothing to show.
   - `Unavailable(error, isRetrying)`: no rates at all (no cache, download failed). It never shows a result.
   - `Available`: live or cached rates, with `isStale`, `refreshError` (only when stale), `isRefreshing`, `missingRate` and `missingRateRetry`.
 - Loading placeholder: `LoadingState` is a `surfaceContainerLow` surface about the result card's height (144dp min), so the screen doesn't jump when rates arrive. It is not a live region.
-- Stable Retry: `onRetry` clears `error` in the ViewModel, so `ConversionSection` remembers the last error. The error card stays in place while retrying, and a progress indicator replaces the Retry button (48dp minimum area, `loading_rates` content description). The stale banner does the same while refreshing.
+- Stable Retry: the ViewModel keeps `error` while Retry runs (`isLoading = true`) and replaces it only with the result (cleared on success, the new error on failure). The error card therefore stays in place while retrying, derived from the state alone, including after a rotation (Phase 13, F4). Nothing is remembered in the composable. A progress indicator replaces the Retry button (48dp minimum area, `loading_rates` content description). The stale banner does the same while refreshing.
 - Shared presentation: `StatusCard` (in `StatusMessages.kt`) lays out the icon, optional title, message, then Retry or the spinner. Title and message form one polite live region. The icon means the state never relies on color alone.
   - Error: `ErrorState`, `error`/`errorContainer` roles, `ic_error`, title `rates_unavailable_title` when no rates could be loaded.
   - Warning: `StaleRateBanner`, gold `extendedColors.warning*` roles, `ic_warning`. Cached rates stay usable.
@@ -225,6 +228,45 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
   - The themed (monochrome) icon is a flat approximation: the 3D arrows' layered ribbons, shading and glow cannot be reduced to one silhouette.
   - The 3D shading and glow lose detail at small sizes (about 24–36dp).
 
+## Rate Freshness and Stability (Phase 13)
+
+Fixes, with this numbering:
+- **F1, rates not refreshed while the app stays alive:** staleness used to be evaluated only when rates were loaded, so rates could stay on screen past the provider's next update without a warning.
+- **F2, DataStore `IOException` handling:** a failing write (full disk) could crash the app.
+- **F3, unavailable refresh with rates already displayed:** the ViewModel set `error` but kept `isStale` unchanged, so the old rates could stay visible without a stale warning.
+- **F4, no-cache Retry and rotation:** the error card's state lived in a composable `remember`, so a rotation during Retry replaced the card with the loading placeholder.
+
+Lifecycle-aware freshness (F1), in `CurrencyConverterViewModel`:
+- `CurrencyConverterScreen` uses `LifecycleStartEffect`: `onForeground()` on STARTED, `onBackground()` on STOPPED or disposal (also during a rotation).
+- `onForeground()` checks freshness at once (`checkFreshness`). If the rates are due or missing, it loads them **silently** (`loadRates(silent = true)`: no `isLoading`, no placeholder or spinner, nothing announced unless the shown text changes). Otherwise it only updates `freshnessCheckedAtMillis`, the "now" the "Last updated: Today, …" label refers to (`RateInfo`/`formatLastUpdated(nowMillis)`).
+- While visible there is exactly one timer (`freshnessJob`), set by `scheduleFreshnessCheck` at the earliest of: the rates' `refreshDueAtMillis`, the pending recovery (below), and the next local midnight (so "Today" stays right). `onBackground()` cancels it; nothing is scheduled while hidden. Clock and time zone are injectable (`clock`, `timeZone`) for tests.
+- Busy-loop guard: every candidate wake time is strictly in the future (the deadline and the recovery only if `> now`; midnight always is). When the pause has already ended while a load is running, nothing is scheduled; the load reschedules when it completes. Never relax these `> now` checks: a zero delay would reschedule forever on the main thread.
+- Single load: every load (initial, Retry, foreground check, deadline, midnight, recovery) goes through `loadRates`, which never starts a second one while `loadJob` is active. Retry during a silent load sets `isLoading` (spinner) and shares the same request. The repository's one-hour minimum still applies to every automatic load.
+
+Backoff and one-shot automatic recovery:
+- After a failed download (`Unavailable`, or `Available` with `isStale`), automatic checks wait `AUTO_REFRESH_BACKOFF_MILLIS` (15 min, `autoRefreshNotBeforeMillis`). Retry ignores the pause. A success resets it.
+- While the screen stays visible, the timer also wakes once at the end of the pause: one automatic recovery attempt per failure sequence (failed downloads since the last success). `recoveryAttempted` is set only when that wake-up actually starts a load, and reset only by a successful download.
+- A failed recovery is not retried: nothing automatic follows before the next midnight check, foreground return or Retry. A failed Retry or foreground check during the pause moves the pending recovery to 15 minutes after that failure; a successful one cancels it. Leaving the screen drops it (the next foreground return checks at once if the pause is over).
+- Midnight during the pause only updates the label; a recovery due exactly at midnight is a single request.
+- Works the same with stale rates on screen and in the no-cache error state (the error card stays, without a spinner, during the silent attempt).
+
+Failure states:
+- F3: an `Unavailable` result while rates are already shown keeps them usable and sets `isStale = true` with `refreshError`, never `error` (the no-rates card). Copy/Share then record `wasStale = true`.
+- F4: `error` is kept while Retry runs; `ratePanel(state)` derives the card from the state alone, so it survives rotation with its spinner. `StatusCard` starts with its "Loading" text when created mid-retry.
+- F2: ViewModel writes (favorites, history record/delete/clear, fee) go through `persist()`, which catches only `IOException` (cancellation still propagates): nothing is saved and the stores' flows keep showing what is stored. A failed fee save forgets `persistedFeePercent` (unless a newer fee was committed meanwhile), so committing the same fee again retries. The repository keeps an unsaved download in memory (see the data-flow notes). Store reads already fall back on `IOException`.
+
+Tests:
+- `RateFreshnessTest` (virtual time, real repository and `RateCache` over an in-memory DataStore with injectable read/write failures): foreground returns, timer deadline and midnight, backoff, the one-shot recovery (exactly one attempt, none after a second failure, background cancellation, foreground return during/after the pause, failed and successful Retry during the pause, Retry joining the recovery, no-cache recovery, midnight boundary, pause ending during a Retry). `freshnessTest` puts every view model in the background at the end, so virtual time can become idle.
+- `testing/StoreFakes.kt`: the in-memory store fakes shared by all view model tests, with write-failure switches (`failNextWrite`, `failingWrites`, `failNextSave`, `failRead`).
+- `CachingCurrencyRepositoryTest`: refresh deadlines, unsaved downloads, cancellation while saving. `CurrencyConverterViewModelTest`: F2–F4. `RatePanelTest`: `ratePanel(state)`.
+- Mutation checks: removing the one-shot guard fails 8 tests (it polls every 15 minutes). Removing the busy-loop guard **hangs** `testDebugUnitTest` instead of failing (see Known issues).
+
+Verification:
+- Phase 13.3, emulator (`Medium_Phone_API_36.1`), with rates made due by rewriting the cache timestamps (no device clock change) and provider requests counted through a logging proxy: launch with current rates (no request); Home and return (state kept, no request); deadline reached while visible (one silent request at the deadline); offline foreground return with due rates (rates usable, stale banner, no request while hidden); reconnect and Retry (one request, warning cleared); no-cache error, Retry and rotation (card and spinner kept); 5 rapid Retries plus a Home/return during a slow request (one request); light and dark themes. All passed.
+- Phase 13.3, TalkBack speech (verbose log): offline foreground return announces the stale message once with no "Loading"; offline Retry says "Loading exchange rates…" then the message once; a successful Retry says "Loading…" then nothing; rotation during a no-cache Retry repeats "Loading exchange rates…" once (see Known issues).
+- Phase 13.4 (one-shot recovery): JVM tests only, not re-tested on the emulator.
+- Final: 318/318 unit tests, clean `assembleDebug`, lint 0 errors (4 existing version warnings), `compileDebugAndroidTestKotlin` passes. Instrumented tests were not run in Phase 13.
+
 ## Known issues
 
 - **Phase 12.8 accessibility limitations (open, not fixed):**
@@ -239,14 +281,18 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
   - If restoring the saved pair takes longer than 500ms, the default MAD → USD can briefly appear before the saved pair replaces it (unless the user has chosen a pair meanwhile). Only covered by virtual-time tests; not reproduced on real storage.
   - Emulator startup timing is noisy (about ±150ms), so small timing differences from the startup wait cannot be ruled out.
   - Full reinstall testing (`pm clear`) was not performed, because it would erase existing emulator data. The fresh-install path was checked by deleting only the `user_preferences` file and by unit tests.
-- **Rotation during a no-cache Retry (open, not fixed):** `ConversionSection` keeps the last error in `remember`, which a configuration change clears. If the device rotates while a Retry runs with no cached rates, the loading placeholder replaces the error card with its spinner. The network request continues. This is an existing presentation limitation.
-- **Cache-read failure during a failed Retry (open, not fixed, investigate before Google Play release):** if rates are already on screen and a Retry then fails while the cache read also returns nothing, the repository returns `Unavailable`. The ViewModel keeps the old snapshot and sets `error`, but leaves `isStale` unchanged, so those rates can stay visible without a stale warning. This is an existing ViewModel/state-management issue.
+- **Phase 13 limitations (open, not fixed):**
+  - Automatic recovery runs once per failure sequence. After it fails, a user who stays on the screen and comes back online gets no further automatic attempt until the next midnight check, a foreground return or Retry. By design (no polling).
+  - Rotating during a Retry makes TalkBack say "Loading exchange rates…" once more when the recreated screen appears (observed in Phase 13.3). The card's text is correct; only the announcement repeats.
+  - A time zone or clock change while the screen is visible is not noticed: the next midnight is computed when the timer is set, so "Today" can be wrong until the next check or foreground return. Delays are monotonic, and the repository treats a clock set backwards as due.
+  - If the busy-loop guard in `scheduleFreshnessCheck` is ever broken, `testDebugUnitTest` hangs instead of failing (runTest's timeout cannot interrupt a loop that never suspends). There is no Gradle test timeout.
+  - `persist()` letting `CancellationException` through is checked by inspection only (the repository has a test for its own save).
+  - The one-shot recovery was verified with JVM tests only, not on the emulator.
+  - Previously open and fixed in Phase 13: rotation during a no-cache Retry (F4), cache-read failure during a failed Retry leaving rates without a stale warning (F3), and rates staying displayed past the provider's next update without a warning (F1).
 
 - **Phase 12.5 limitations (open, not fixed):**
   - A missing-currency Retry while the cache is still valid (last download under an hour ago) can briefly show the spinner while the repository reads DataStore, with no network request. Accepted: the ViewModel load is genuine and the text doesn't promise a download.
-  - Rates can stay displayed without a stale warning if the app stays open past the provider's next update: staleness is evaluated only when rates are loaded. Existing behavior.
   - Connectivity is not monitored independently while valid cached rates are used.
-  - Live TalkBack verification is deferred to Phase 12.8.
 
 - **Intermittent, not reproduced (open):** this happened twice during emulator testing (Phases 4 and 6), each time right after launch while typing into the amount field:
   - the amount unexpectedly became `1001000` after typing `1000`;
@@ -260,3 +306,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 - **Unexplained History entry (observation, open):** during Phase 12.4 emulator validation, History contained "200 USD → 1,993.92 MAD" at 12:54 PM, which no test script created. It appeared while the emulator was running and the scripts were idle. The cause is unknown: possibly manual input on the emulator window, not established. No History behavior was changed. If similar entries appear in a controlled run with no external input (check with `getevent`), investigate it together with the intermittent issue above.
   - Second observation (2026-10-09, Phase 12.7): History contained "100 MAD → 10.05 USD" at about 09:45 AM, which no test script created. The scripts were idle at that time. Logcat showed touch and clipboard activity between about 09:45:22 and 09:45:27: a touch gesture, a bottom sheet opening and closing, the amount field taking focus, then a clipboard write (Copy). `getevent` was not recording, so the origin of these interactions is not confirmed. The evidence (History screenshot and the saved logcat) is in the session scratchpad. The entry itself is no longer on the emulator: a later `connectedDebugAndroidTest` run uninstalled the app and erased its data. Not resolved.
 - **Emulator test scripting:** `adb shell input text` typed right after a tap can drop the first characters, because the IME is not yet connected. Wait for `dumpsys input_method` to report `mInputShown=true` before typing. Also note that `adb input` events never appear in `getevent`; only real device or emulator-window input does.
+  - TalkBack 16 logs what it speaks (`Actors: act() … SPEAK`) only when TalkBack Settings → Advanced settings → Developer settings → Log output level is VERBOSE, which needs a confirmation dialog. With ERROR (the default) there are no speech lines, which is not an accessibility failure. Set it back to ERROR afterwards.
+  - To make rates due without changing the device clock, rewrite `fetchedAtEpochMillis` / `nextUpdateEpochSeconds` in `files/datastore/rates.preferences_pb` through `run-as` with the app stopped (Phase 13.3). Under Git Bash, set `MSYS_NO_PATHCONV=1` or device paths like `/data/local/tmp` get rewritten.
+  - The emulator's clock can differ from the host's (28s in Phase 13.3). Compute timings from `adb shell date +%s`, not host time.
+  - Provider requests can be counted with a logging proxy on the host (`adb reverse` plus `settings put global http_proxy 127.0.0.1:<port>`). Remove the proxy (`settings delete global http_proxy`) before airplane-mode tests, since loopback still works offline.

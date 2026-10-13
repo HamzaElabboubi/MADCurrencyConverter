@@ -1,5 +1,7 @@
 package com.elabboubisolution.madconverter.data.repository
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.elabboubisolution.madconverter.data.local.CachedSnapshot
 import com.elabboubisolution.madconverter.data.local.RateCache
 import com.elabboubisolution.madconverter.data.local.RateCacheTest.Companion.SAMPLE_SNAPSHOT
@@ -8,6 +10,7 @@ import com.elabboubisolution.madconverter.data.remote.RateProvider
 import com.elabboubisolution.madconverter.domain.model.Currency
 import com.elabboubisolution.madconverter.domain.model.RateFetchError
 import com.elabboubisolution.madconverter.domain.model.RateFetchResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,11 +19,14 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.io.IOException
 
 class CachingCurrencyRepositoryTest {
 
@@ -28,6 +34,7 @@ class CachingCurrencyRepositoryTest {
     val tmp = TemporaryFolder()
 
     private lateinit var scope: CoroutineScope
+    private lateinit var dataStore: FailingWritesDataStore
     private lateinit var cache: RateCache
     private val provider = FakeProvider()
     private var now = FETCHED_AT
@@ -44,7 +51,8 @@ class CachingCurrencyRepositoryTest {
     @Before
     fun setUp() {
         scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-        cache = RateCache(testDataStore(scope, File(tmp.root, "rates.preferences_pb")), Json)
+        dataStore = FailingWritesDataStore(testDataStore(scope, File(tmp.root, "rates.preferences_pb")))
+        cache = RateCache(dataStore, Json)
         repository = CachingCurrencyRepository(provider, cache, clock = { now })
     }
 
@@ -55,7 +63,7 @@ class CachingCurrencyRepositoryTest {
     fun `no cache - downloads, returns current rates and caches them`() = runTest {
         provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), result)
         assertEquals(CachedSnapshot(SAMPLE_SNAPSHOT, FETCHED_AT), cache.read())
@@ -66,7 +74,7 @@ class CachingCurrencyRepositoryTest {
     fun `no cache and download fails - unavailable with the error`() = runTest {
         provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
 
-        assertEquals(RatesResult.Unavailable(RateFetchError.NoConnection), repository.getRates())
+        assertEquals(RatesResult.Unavailable(RateFetchError.NoConnection), repository.getRates().ignoringDue())
     }
 
     @Test
@@ -74,7 +82,7 @@ class CachingCurrencyRepositoryTest {
         cache.write(SAMPLE_SNAPSHOT, FETCHED_AT)
         now = nextUpdateMillis - 1
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), result)
         assertEquals(0, provider.calls)
@@ -86,7 +94,7 @@ class CachingCurrencyRepositoryTest {
         now = nextUpdateMillis
         provider.next = RateFetchResult.Success(newerSnapshot)
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(RatesResult.Available(newerSnapshot, isStale = false), result)
         assertEquals(CachedSnapshot(newerSnapshot, nextUpdateMillis), cache.read())
@@ -98,7 +106,7 @@ class CachingCurrencyRepositoryTest {
         now = nextUpdateMillis + 1
         provider.next = RateFetchResult.Failure(RateFetchError.Timeout)
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(
             RatesResult.Available(SAMPLE_SNAPSHOT, isStale = true, refreshError = RateFetchError.Timeout),
@@ -113,12 +121,12 @@ class CachingCurrencyRepositoryTest {
         cache.write(SAMPLE_SNAPSHOT, fetchedJustBefore)
         now = fetchedJustBefore + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS - 1
 
-        repository.getRates()
+        repository.getRates().ignoringDue()
         assertEquals(0, provider.calls)
 
         now = fetchedJustBefore + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS
         provider.next = RateFetchResult.Success(newerSnapshot)
-        repository.getRates()
+        repository.getRates().ignoringDue()
         assertEquals(1, provider.calls)
     }
 
@@ -128,14 +136,14 @@ class CachingCurrencyRepositoryTest {
         cache.write(unscheduled, FETCHED_AT)
 
         now = FETCHED_AT + CachingCurrencyRepository.MAX_AGE_WITHOUT_SCHEDULE_MILLIS - 1
-        assertEquals(RatesResult.Available(unscheduled, isStale = false), repository.getRates())
+        assertEquals(RatesResult.Available(unscheduled, isStale = false), repository.getRates().ignoringDue())
         assertEquals(0, provider.calls)
 
         now = FETCHED_AT + CachingCurrencyRepository.MAX_AGE_WITHOUT_SCHEDULE_MILLIS
         provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
         assertEquals(
             RatesResult.Available(unscheduled, isStale = true, refreshError = RateFetchError.NoConnection),
-            repository.getRates(),
+            repository.getRates().ignoringDue(),
         )
     }
 
@@ -145,7 +153,7 @@ class CachingCurrencyRepositoryTest {
         now = FETCHED_AT - 1
         provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
 
-        repository.getRates()
+        repository.getRates().ignoringDue()
 
         assertEquals(1, provider.calls)
     }
@@ -159,7 +167,7 @@ class CachingCurrencyRepositoryTest {
         now = FETCHED_AT + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS
         provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), result)
         assertEquals(1, provider.calls)
@@ -171,7 +179,7 @@ class CachingCurrencyRepositoryTest {
         cache.write(incomplete, FETCHED_AT)
         now = FETCHED_AT + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS - 1
 
-        assertEquals(RatesResult.Available(incomplete, isStale = false), repository.getRates())
+        assertEquals(RatesResult.Available(incomplete, isStale = false), repository.getRates().ignoringDue())
         assertEquals(0, provider.calls)
     }
 
@@ -182,10 +190,162 @@ class CachingCurrencyRepositoryTest {
         now = nextUpdateMillis - 1
         provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
 
-        val result = repository.getRates()
+        val result = repository.getRates().ignoringDue()
 
         assertEquals(RatesResult.Available(incomplete, isStale = false, refreshError = null), result)
         assertEquals(1, provider.calls)
+    }
+
+    // --- Storage write failures ---
+
+    @Test
+    fun `download succeeds but saving fails - downloaded rates are still returned as current`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = IOException("disk full")
+
+        val result = repository.getRates().ignoringDue()
+
+        assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), result)
+        assertNull("nothing could be saved", cache.read())
+    }
+
+    @Test
+    fun `saving fails - a newer download replaces the older cache only in memory`() = runTest {
+        cache.write(SAMPLE_SNAPSHOT, FETCHED_AT)
+        now = nextUpdateMillis
+        provider.next = RateFetchResult.Success(newerSnapshot)
+        dataStore.writeFailure = IOException("disk full")
+
+        assertEquals(RatesResult.Available(newerSnapshot, isStale = false), repository.getRates().ignoringDue())
+        assertEquals("the old cache is left intact", CachedSnapshot(SAMPLE_SNAPSHOT, FETCHED_AT), cache.read())
+
+        // Still before the newer snapshot's next update: served from memory, no new download.
+        now = nextUpdateMillis + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS
+        assertEquals(RatesResult.Available(newerSnapshot, isStale = false), repository.getRates().ignoringDue())
+        assertEquals(1, provider.calls)
+    }
+
+    @Test
+    fun `unsaved download still counts for the one hour minimum between downloads`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = IOException("disk full")
+        repository.getRates().ignoringDue()
+
+        now = FETCHED_AT + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS - 1
+        assertEquals(RatesResult.Available(SAMPLE_SNAPSHOT, isStale = false), repository.getRates().ignoringDue())
+        assertEquals(1, provider.calls)
+    }
+
+    @Test
+    fun `unsaved rates past their next update are refreshed, and stale if that fails`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = IOException("disk full")
+        repository.getRates().ignoringDue()
+
+        now = nextUpdateMillis
+        provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
+        assertEquals(
+            RatesResult.Available(SAMPLE_SNAPSHOT, isStale = true, refreshError = RateFetchError.NoConnection),
+            repository.getRates().ignoringDue(),
+        )
+        assertEquals(2, provider.calls)
+    }
+
+    @Test
+    fun `once storage works again the next download is saved`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = IOException("disk full")
+        repository.getRates().ignoringDue()
+
+        dataStore.writeFailure = null
+        now = nextUpdateMillis
+        provider.next = RateFetchResult.Success(newerSnapshot)
+
+        assertEquals(RatesResult.Available(newerSnapshot, isStale = false), repository.getRates().ignoringDue())
+        assertEquals(CachedSnapshot(newerSnapshot, nextUpdateMillis), cache.read())
+    }
+
+    @Test
+    fun `cancellation while saving is not swallowed`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = CancellationException("cancelled")
+
+        try {
+            repository.getRates().ignoringDue()
+            fail("cancellation must propagate")
+        } catch (_: CancellationException) {
+        }
+    }
+
+    // --- Refresh deadline (when the rates stop being current) ---
+
+    @Test
+    fun `current cache is due at the announced next update`() = runTest {
+        cache.write(SAMPLE_SNAPSHOT, FETCHED_AT)
+
+        assertEquals(nextUpdateMillis, repository.getRates().dueAt())
+    }
+
+    @Test
+    fun `fresh download is due at its next update`() = runTest {
+        cache.write(SAMPLE_SNAPSHOT, FETCHED_AT)
+        now = nextUpdateMillis
+        provider.next = RateFetchResult.Success(newerSnapshot)
+
+        assertEquals(checkNotNull(newerSnapshot.nextUpdateEpochSeconds) * 1000, repository.getRates().dueAt())
+    }
+
+    @Test
+    fun `download just before the next update is due only an hour later`() = runTest {
+        now = nextUpdateMillis - 1000
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+
+        assertEquals(now + CachingCurrencyRepository.MIN_FETCH_INTERVAL_MILLIS, repository.getRates().dueAt())
+    }
+
+    @Test
+    fun `without an announced next update the cache is due 24 hours after the download`() = runTest {
+        cache.write(SAMPLE_SNAPSHOT.copy(nextUpdateEpochSeconds = null), FETCHED_AT)
+
+        assertEquals(FETCHED_AT + CachingCurrencyRepository.MAX_AGE_WITHOUT_SCHEDULE_MILLIS, repository.getRates().dueAt())
+    }
+
+    @Test
+    fun `stale rates are already due`() = runTest {
+        cache.write(SAMPLE_SNAPSHOT, FETCHED_AT)
+        now = nextUpdateMillis + 5
+        provider.next = RateFetchResult.Failure(RateFetchError.NoConnection)
+
+        assertEquals(now, repository.getRates().dueAt())
+    }
+
+    @Test
+    fun `unsaved download is due at its next update`() = runTest {
+        provider.next = RateFetchResult.Success(SAMPLE_SNAPSHOT)
+        dataStore.writeFailure = IOException("disk full")
+        repository.getRates()
+
+        now = FETCHED_AT + 1
+        assertEquals(nextUpdateMillis, repository.getRates().dueAt())
+        assertEquals(1, provider.calls)
+    }
+
+    /** The other tests compare everything except the refresh deadline, covered above. */
+    private fun RatesResult.ignoringDue(): RatesResult =
+        if (this is RatesResult.Available) copy(refreshDueAtMillis = null) else this
+
+    private fun RatesResult.dueAt(): Long? = (this as RatesResult.Available).refreshDueAtMillis
+
+    /** A real DataStore whose writes can be made to fail (full disk, I/O error, cancellation). */
+    private class FailingWritesDataStore(private val delegate: DataStore<Preferences>) : DataStore<Preferences> {
+        var writeFailure: Throwable? = null
+
+        override val data = delegate.data
+
+        override suspend fun updateData(transform: suspend (t: Preferences) -> Preferences): Preferences {
+            writeFailure?.let { throw it }
+            return delegate.updateData(transform)
+        }
     }
 
     private class FakeProvider : RateProvider {
