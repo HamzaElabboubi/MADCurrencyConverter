@@ -45,6 +45,8 @@
     <string name="share_subject">تحويل عملات</string>
     <string name="no_share_app">لا يوجد تطبيق متاح للمشاركة</string>
     <string name="history_open">سجل التحويلات</string>
+    <string name="more_options">خيارات إضافية</string>
+    <string name="privacy_settings">إعدادات الخصوصية</string>
     <string name="history_title">السجل</string>
     <string name="history_clear_all">مسح الكل</string>
     <string name="history_clear_title">مسح السجل؟</string>

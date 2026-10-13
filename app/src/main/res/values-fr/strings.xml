@@ -49,6 +49,8 @@
     <string name="no_share_app">Aucune application disponible pour partager</string>
 
     <string name="history_open">Historique des conversions</string>
+    <string name="more_options">Plus d\'options</string>
+    <string name="privacy_settings">Paramètres de confidentialité</string>
     <string name="history_title">Historique</string>
     <string name="history_clear_all">Tout effacer</string>
     <string name="history_clear_title">Effacer l\'historique ?</string>

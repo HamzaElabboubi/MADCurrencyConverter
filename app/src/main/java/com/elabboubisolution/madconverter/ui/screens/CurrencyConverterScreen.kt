@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -85,6 +87,8 @@ import kotlinx.coroutines.launch
 fun CurrencyConverterScreen(
     modifier: Modifier = Modifier,
     viewModel: CurrencyConverterViewModel = viewModel(factory = CurrencyConverterViewModel.Factory),
+    showPrivacyOptions: Boolean = false,
+    onPrivacyOptions: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -137,6 +141,8 @@ fun CurrencyConverterScreen(
             onHistoryCleared = viewModel::onHistoryCleared,
             onFeeChanged = viewModel::onFeePercentChanged,
             onFeeCommitted = viewModel::onFeePercentCommitted,
+            showPrivacyOptions = showPrivacyOptions,
+            onPrivacyOptions = onPrivacyOptions,
         )
         SnackbarHost(hostState = snackbarHostState, modifier = Modifier.align(Alignment.BottomCenter))
     }
@@ -180,6 +186,8 @@ fun CurrencyConverterContent(
     onHistoryCleared: () -> Unit = {},
     onFeeChanged: (BigDecimal) -> Unit = {},
     onFeeCommitted: () -> Unit = {},
+    showPrivacyOptions: Boolean = false,
+    onPrivacyOptions: () -> Unit = {},
 ) {
     var pickerSide by rememberSaveable { mutableStateOf<PickerSide?>(null) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
@@ -192,7 +200,12 @@ fun CurrencyConverterContent(
             .fillMaxSize()
             .nestedScroll(scrollBehavior.nestedScrollConnection),
     ) {
-        ConverterTopBar(onHistory = { showHistory = true }, scrollBehavior = scrollBehavior)
+        ConverterTopBar(
+            onHistory = { showHistory = true },
+            scrollBehavior = scrollBehavior,
+            showPrivacyOptions = showPrivacyOptions,
+            onPrivacyOptions = onPrivacyOptions,
+        )
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -287,10 +300,18 @@ fun CurrencyConverterContent(
  * Small Material 3 top app bar with the app name and the only History action. Its title is
  * start-aligned, so it moves to the right in RTL. It draws behind the status bar and tints
  * itself once the content scrolls beneath it.
+ *
+ * When [showPrivacyOptions] (UMP requires a way to change ad consent choices), a "More options"
+ * menu follows History with a single "Privacy settings" item, which opens UMP's own form.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ConverterTopBar(onHistory: () -> Unit, scrollBehavior: TopAppBarScrollBehavior) {
+private fun ConverterTopBar(
+    onHistory: () -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior,
+    showPrivacyOptions: Boolean,
+    onPrivacyOptions: () -> Unit,
+) {
     TopAppBar(
         title = {
             Text(
@@ -303,6 +324,23 @@ private fun ConverterTopBar(onHistory: () -> Unit, scrollBehavior: TopAppBarScro
         actions = {
             IconButton(onClick = onHistory) {
                 Icon(painterResource(R.drawable.ic_history), stringResource(R.string.history_open))
+            }
+            if (showPrivacyOptions) {
+                var menuExpanded by rememberSaveable { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(painterResource(R.drawable.ic_more_vert), stringResource(R.string.more_options))
+                    }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.privacy_settings)) },
+                            onClick = {
+                                menuExpanded = false
+                                onPrivacyOptions()
+                            },
+                        )
+                    }
+                }
             }
         },
         scrollBehavior = scrollBehavior,

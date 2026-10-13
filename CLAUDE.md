@@ -26,8 +26,8 @@ How the data flows:
 - **`viewmodel/CurrencyConverterViewModel`**: exposes one `StateFlow<ConverterUiState>`. All derived fields are recomputed in `withDerivedFields`. Rate loading, freshness checks and automatic recovery are described in "Rate Freshness and Stability (Phase 13)".
 - **`ads/`**: holds all AdMob code and is referenced only from `MainActivity`.
   - The anchored adaptive `BannerAd` is the Scaffold `bottomBar`, so the content is padded by its height and never drawn under it. It takes no space until an ad loads.
-  - `AdsInitializer` is the single place where UMP consent must be added before release.
-  - IDs come from `app/build.gradle.kts`. They are Google's test IDs, and `AdConfigTest` fails if the banner ID changes.
+  - `AdsInitializer` owns UMP consent and the Mobile Ads SDK start; the banner is composed only when it allows it. See "UMP Consent and AdMob Configuration (Phase 14.2)".
+  - IDs come from `app/build.gradle.kts`: Google's test IDs in debug builds (`AdConfigTest` fails if the debug banner ID changes), production IDs from outside the repository in release builds.
 - **UI**: lives in `ui/screens` and `ui/components`. Strings come in English (default) and French (`values-fr`). ExchangeRate-API's terms require the "Rates By Exchange Rate API" attribution link in `RateInfo`.
 
 **`PROJECT_SPEC.md` is the source of truth for what to build.** Read it before starting work. Key constraints from it:
@@ -92,7 +92,7 @@ Run from the repo root. On Windows use `./gradlew.bat` (or `./gradlew` from Git 
 
 - **AGP 9.x with built-in Kotlin**: `app/build.gradle.kts` applies `com.android.application` plus the Kotlin `compose` and `serialization` compiler plugins only — there is no separate `org.jetbrains.kotlin.android` plugin. Don't add one.
 - AGP 9.4 requires Gradle ≥ 9.6 (wrapper is on 9.8.0). Current AndroidX/OkHttp releases require `compileSdk` ≥ 37, so it is `release(37) { minorApiLevel = 2 }`, while `targetSdk` stays 36 and `minSdk` is 24, with a Java/Kotlin target of 11. The Gradle daemon JVM is pinned to 21 via `gradle/gradle-daemon-jvm.properties`. From a shell, point `JAVA_HOME` at Android Studio's `jbr`.
-- The AdMob App ID is injected into the manifest via `manifestPlaceholders["admobAppId"]` (Google's test ID by default). The Ads SDK crashes at startup if that meta-data is missing.
+- The AdMob App ID is injected into the manifest via the `admobAppId` placeholder, set per variant in `androidComponents.onVariants` (test ID for debug, production ID for release). The Ads SDK crashes at startup if that meta-data is missing.
 - DI is manual: `MadConverterApplication` creates one `AppContainer` (shared `Json`, `OkHttpClient` with timeouts). Wire new dependencies there, not through Hilt.
 - All dependency/plugin versions live in the version catalog `gradle/libs.versions.toml`; reference them as `libs.*` in build scripts. Compose library versions come from the Compose BOM (no per-artifact versions).
 - `settings.gradle.kts` uses `RepositoriesMode.FAIL_ON_PROJECT_REPOS` — add repositories there, not in module build files.
@@ -267,7 +267,42 @@ Verification:
 - Phase 13.4 (one-shot recovery): JVM tests only, not re-tested on the emulator.
 - Final: 318/318 unit tests, clean `assembleDebug`, lint 0 errors (4 existing version warnings), `compileDebugAndroidTestKotlin` passes. Instrumented tests were not run in Phase 13.
 
+## UMP Consent and AdMob Configuration (Phase 14.2)
+
+Consent flow (`ads/AdsInitializer`, `ads/ConsentPlatform`):
+- One `AdsInitializer` per process (`AdsInitializer.get`). `MainActivity.onCreate` starts a `ConsentSession` on every creation (launches and rotations) and cancels it in `onDestroy`. A cancelled session drops its Activity reference and ignores every later callback. A new session cancels any previous one.
+- Each session: `requestConsentInfoUpdate`, then `loadAndShowConsentFormIfRequired`. Consent stored from an earlier launch allows ads at once, in parallel with the update (Google's recommended flow). If the update fails (offline) or the form fails, the stored consent (`canRequestAds()`) decides.
+- `MobileAds.initialize` runs at most once per process, on a background thread, and only after `canRequestAds()` is true.
+- `canLoadAds: StateFlow<Boolean>` = consent allows ads **and** SDK initialization has completed. It is the only ad gate: `BannerAd` is composed only while it is true, so no `AdView` exists and no ad is requested before. If consent is later withdrawn, it turns false and the banner leaves the composition (its `AdView` is destroyed). The app works fully without ads.
+- `ConsentPlatform` is the interface over UMP (`UmpConsentPlatform` is the real one), so tests drive the callbacks with a fake.
+
+Privacy options:
+- `privacyOptionsRequired: StateFlow<Boolean>` is true only when UMP's `privacyOptionsRequirementStatus` is `REQUIRED`. It is refreshed whenever consent is read.
+- Only then the top app bar shows a "More options" button (`ic_more_vert`, after History) with a single "Privacy settings" item, which opens UMP's own `showPrivacyOptionsForm`. No custom consent UI. Strings `more_options` / `privacy_settings` are in English, French and Arabic.
+- `ConsentSession.showPrivacyOptions()` refuses while a privacy form or the consent form is showing. Each form gets an id, so late or duplicate callbacks are ignored. After the form closes (or fails, which is logged), consent is read again. Activity destruction during the form drops its callback, and the next Activity's session re-reads the stored choice at start.
+
+AdMob IDs (`app/build.gradle.kts`):
+- Debug: always Google's official test App ID and banner ID.
+- Release: the `ADMOB_APP_ID` / `ADMOB_BANNER_AD_UNIT_ID` environment variables (CI), else `admob.appId` / `admob.bannerAdUnitId` in `local.properties`. Never commit them. Values are read lazily, so debug builds and IDE sync never need them.
+- `validateReleaseAdMobIds` runs before `preReleaseBuild` (so before the manifest, BuildConfig and compilation of every release APK/AAB). It fails a release build whose IDs are missing, malformed (`ca-app-pub-<16 digits>~<10 digits>`, `ca-app-pub-<16 digits>/<10 digits>`), Google's test IDs, or from two different AdMob accounts. Its messages never print the IDs. Verified by running the task with each case; there are no JVM tests for the build script.
+
+UMP debug testing (debug builds only):
+- `local.properties`: `ump.debugGeography=EEA` (or `REGULATED_US_STATE`, `OTHER`) and `ump.testDeviceIds=<hashed id>[,…]` (physical devices only: the hash is printed by UMP in logcat; emulators are test devices already). Off by default.
+- Passed through `BuildConfig.UMP_DEBUG_GEOGRAPHY` / `UMP_TEST_DEVICE_IDS`, which are always empty in release builds; `UmpDebugSettings.parse` also returns null outside debug builds. Invalid values are ignored with a logcat warning.
+- To see the first-launch form again, clear the app's data (this also erases History, favorites, fee, pair and rate cache).
+
+Tests: `AdsInitializerTest` (23: consent flow, gating, duplicate callbacks, recreation, privacy options), `UmpDebugSettingsTest` (6), `PrivacyOptionsMenuTest` (instrumented, 2, compiled but never run). Mutation checks of the guards fail tests.
+
+Verification: 347/347 unit tests, clean `assembleDebug`, lint 0 errors (4 existing version warnings), `compileDebugAndroidTestKotlin` passes. **Not validated on a device or emulator** (Phase 14.2C was blocked by insufficient RAM); see Known issues.
+
 ## Known issues
+
+- **Phase 14.2 limitations (open, device validation not done):**
+  - Nothing of the consent flow has run on a device or emulator; only JVM tests with a fake UMP.
+  - Unverified: whether UMP accepts Google's test App ID (if not, `canRequestAds()` stays false and debug shows no test ads), whether the consent form appears with `ump.debugGeography=EEA`, accept/decline, test banners loading after consent, the privacy options menu and form (withdraw and re-grant), rotation and Home during the forms, offline startup with and without stored consent, startup timing against the 500ms pair wait, TalkBack on the menu, and its RTL placement.
+  - First launch offline: no stored consent means no ads for that session (by design).
+  - Production needs a published GDPR (and, if relevant, US states) message in AdMob Privacy & messaging, or UMP shows no form and never requires privacy options.
+  - Not decided: `setTagForUnderAgeOfConsent` (depends on the target audience).
 
 - **Phase 12.8 accessibility limitations (open, not fixed):**
   - A result or Real Cost total that TalkBack is focused on is read again when its live region switches on after the pause. Compose does not expose TalkBack focus, so the app cannot skip it.

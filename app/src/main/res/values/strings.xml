@@ -53,6 +53,8 @@
     <string name="no_share_app">No app available to share with</string>
 
     <string name="history_open">Conversion history</string>
+    <string name="more_options">More options</string>
+    <string name="privacy_settings">Privacy settings</string>
     <string name="history_title">History</string>
     <string name="history_clear_all">Clear all</string>
     <string name="history_clear_title">Clear history?</string>
